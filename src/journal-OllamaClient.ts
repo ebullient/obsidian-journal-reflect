@@ -1,22 +1,21 @@
 import { Notice } from "obsidian";
+import { Ollama } from "ollama/browser";
 
-interface OllamaRequest {
-    model: string;
-    prompt: string;
-    system?: string;
-    stream?: boolean;
+export interface IOllamaClient {
+    generateReflection(
+        model: string,
+        systemPrompt: string,
+        documentText: string,
+    ): Promise<string | null>;
+    checkConnection(): Promise<boolean>;
+    listModels(): Promise<string[]>;
 }
 
-interface OllamaResponse {
-    response: string;
-    done: boolean;
-}
-
-export class OllamaClient {
-    private baseUrl: string;
+export class OllamaClient implements IOllamaClient {
+    private ollama: Ollama;
 
     constructor(baseUrl: string) {
-        this.baseUrl = baseUrl.replace(/\/$/, "");
+        this.ollama = new Ollama({ host: baseUrl });
     }
 
     async generateReflection(
@@ -29,29 +28,14 @@ export class OllamaClient {
 
 ${documentText}`;
 
-            const request: OllamaRequest = {
+            const response = await this.ollama.generate({
                 model: model,
                 prompt: prompt,
                 system: systemPrompt,
                 stream: false,
-            };
-
-            const response = await fetch(`${this.baseUrl}/api/generate`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(request),
             });
 
-            if (!response.ok) {
-                throw new Error(
-                    `HTTP ${response.status}: ${response.statusText}`,
-                );
-            }
-
-            const data: OllamaResponse = await response.json();
-            return data.response?.trim() || null;
+            return response.response?.trim() || null;
         } catch (error) {
             console.error("Error calling Ollama API: ", error);
             const errorMsg =
@@ -63,10 +47,8 @@ ${documentText}`;
 
     async checkConnection(): Promise<boolean> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/tags`, {
-                method: "GET",
-            });
-            return response.ok;
+            await this.ollama.list();
+            return true;
         } catch (_error) {
             return false;
         }
@@ -74,17 +56,16 @@ ${documentText}`;
 
     async listModels(): Promise<string[]> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/tags`);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const data = await response.json();
-            return (
-                data.models?.map((model: { name: string }) => model.name) || []
-            );
+            const response = await this.ollama.list();
+            return response.models?.map((model) => model.name) || [];
         } catch (error) {
             console.error("Error fetching models:", error);
             return [];
         }
+    }
+
+    // Factory method for testing
+    static createForTesting(baseUrl: string): OllamaClient {
+        return new OllamaClient(baseUrl);
     }
 }
