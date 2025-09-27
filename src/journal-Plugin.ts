@@ -7,20 +7,9 @@ import {
     TFile,
 } from "obsidian";
 import type { JournalReflectSettings } from "./@types/settings";
-import {
-    DEFAULT_AFFIRMATION_PROMPT,
-    DEFAULT_REFLECTION_PROMPT,
-    DEFAULT_SETTINGS,
-} from "./journal-Constants";
+import { DEFAULT_PROMPT, DEFAULT_SETTINGS } from "./journal-Constants";
 import { OllamaClient } from "./journal-OllamaClient";
 import { JournalReflectSettingsTab } from "./journal-SettingsTab";
-
-type ContentType = "reflection" | "affirmation";
-
-const CONTENT_TYPE_LABELS = {
-    reflection: "reflection question",
-    affirmation: "affirmation",
-} as const;
 
 export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
@@ -34,43 +23,35 @@ export class JournalReflectPlugin extends Plugin {
 
         this.addSettingTab(new JournalReflectSettingsTab(this.app, this));
 
-        this.addCommand({
-            id: "journal-reflect",
-            name: "Generate reflection question",
-            callback: async () => {
-                await this.generateContent("reflection");
-            },
-        });
+        // Dynamically generate commands for each configured prompt
+        this.generateCommands();
+    }
 
-        this.addCommand({
-            id: "journal-reflect-cursor",
-            name: "Generate reflection at cursor",
-            editorCallback: async (
-                editor: Editor,
-                ctx: MarkdownView | MarkdownFileInfo,
-            ) => {
-                await this.generateContentAtCursor(editor, ctx, "reflection");
-            },
-        });
+    private generateCommands() {
+        for (const [promptKey, promptConfig] of Object.entries(
+            this.settings.prompts,
+        )) {
+            // Generate main command
+            this.addCommand({
+                id: `journal-${promptKey}`,
+                name: `Generate ${promptConfig.displayLabel}`,
+                callback: async () => {
+                    await this.generateContent(promptKey);
+                },
+            });
 
-        this.addCommand({
-            id: "journal-affirmation",
-            name: "Generate affirmation",
-            callback: async () => {
-                await this.generateContent("affirmation");
-            },
-        });
-
-        this.addCommand({
-            id: "journal-affirmation-cursor",
-            name: "Generate affirmation at cursor",
-            editorCallback: async (
-                editor: Editor,
-                ctx: MarkdownView | MarkdownFileInfo,
-            ) => {
-                await this.generateContentAtCursor(editor, ctx, "affirmation");
-            },
-        });
+            // Generate cursor command
+            this.addCommand({
+                id: `journal-${promptKey}-cursor`,
+                name: `Generate ${promptConfig.displayLabel} at cursor`,
+                editorCallback: async (
+                    editor: Editor,
+                    ctx: MarkdownView | MarkdownFileInfo,
+                ) => {
+                    await this.generateContentAtCursor(editor, ctx, promptKey);
+                },
+            });
+        }
     }
 
     onunload() {
@@ -93,7 +74,7 @@ export class JournalReflectPlugin extends Plugin {
         this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
     }
 
-    async generateContent(type: ContentType) {
+    async generateContent(promptKey: string) {
         const currentView =
             this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!currentView) {
@@ -102,22 +83,22 @@ export class JournalReflectPlugin extends Plugin {
         }
 
         const docContent = currentView.editor.getValue();
-        const systemPrompt = await this.resolvePrompt(currentView, type);
+        const systemPrompt = await this.resolvePrompt(currentView, promptKey);
         const content = await this.getGeneratedContent(
             docContent,
             systemPrompt,
-            type,
+            promptKey,
         );
 
         if (content) {
-            this.insertContentAtEnd(currentView, content, type);
+            this.insertContentAtEnd(currentView, content, promptKey);
         }
     }
 
     async generateContentAtCursor(
         editor: Editor,
         ctx: MarkdownView | MarkdownFileInfo,
-        type: ContentType,
+        promptKey: string,
     ) {
         const docContent = editor.getValue();
 
@@ -127,15 +108,15 @@ export class JournalReflectPlugin extends Plugin {
             return;
         }
 
-        const systemPrompt = await this.resolvePromptFromFile(file, type);
+        const systemPrompt = await this.resolvePromptFromFile(file, promptKey);
         const content = await this.getGeneratedContent(
             docContent,
             systemPrompt,
-            type,
+            promptKey,
         );
 
         if (content) {
-            this.insertContentAtCursor(editor, content, type);
+            this.insertContentAtCursor(editor, content, promptKey);
         }
     }
 
@@ -149,7 +130,7 @@ export class JournalReflectPlugin extends Plugin {
     private insertContentAtEnd(
         view: MarkdownView,
         content: string,
-        type: ContentType,
+        promptKey: string,
     ): void {
         const formattedContent = this.formatAsBlockquote(content);
         const cursorPos = view.editor.getCursor();
@@ -157,33 +138,37 @@ export class JournalReflectPlugin extends Plugin {
             cursorPos.line,
             `${view.editor.getLine(cursorPos.line)}\n\n${formattedContent}\n\n`,
         );
-        new Notice(`Inserted ${CONTENT_TYPE_LABELS[type]}`);
+        const displayLabel =
+            this.settings.prompts[promptKey]?.displayLabel || promptKey;
+        new Notice(`Inserted ${displayLabel}`);
     }
 
     private insertContentAtCursor(
         editor: Editor,
         content: string,
-        type: ContentType,
+        promptKey: string,
     ): void {
         const formattedContent = this.formatAsBlockquote(content);
         editor.replaceSelection(`${formattedContent}\n\n`);
-        new Notice(`Inserted ${CONTENT_TYPE_LABELS[type]} at cursor`);
+        const displayLabel =
+            this.settings.prompts[promptKey]?.displayLabel || promptKey;
+        new Notice(`Inserted ${displayLabel} at cursor`);
     }
 
     private async resolvePrompt(
         view: MarkdownView,
-        type: ContentType,
+        promptKey: string,
     ): Promise<string> {
         const file = view.file;
         if (!file) {
-            return this.getDefaultPrompt(type);
+            return this.getDefaultPrompt(promptKey);
         }
-        return this.resolvePromptFromFile(file, type);
+        return this.resolvePromptFromFile(file, promptKey);
     }
 
     private async resolvePromptFromFile(
         file: TFile,
-        type: ContentType,
+        promptKey: string,
     ): Promise<string> {
         // Get frontmatter using Obsidian's API
         const frontmatter =
@@ -198,10 +183,7 @@ export class JournalReflectPlugin extends Plugin {
                 }
                 if (typeof frontmatter.prompt === "object") {
                     // Object with separate prompts
-                    const promptValue =
-                        type === "reflection"
-                            ? frontmatter.prompt.reflection
-                            : frontmatter.prompt.affirmation;
+                    const promptValue = frontmatter.prompt[promptKey];
                     if (typeof promptValue === "string") {
                         return promptValue;
                     }
@@ -220,10 +202,7 @@ export class JournalReflectPlugin extends Plugin {
                     }
                 } else if (typeof frontmatter["prompt-file"] === "object") {
                     // Object with separate prompt files
-                    const promptFile =
-                        type === "reflection"
-                            ? frontmatter["prompt-file"].reflection
-                            : frontmatter["prompt-file"].affirmation;
+                    const promptFile = frontmatter["prompt-file"][promptKey];
                     if (typeof promptFile === "string") {
                         const fileContent =
                             await this.readPromptFromFile(promptFile);
@@ -236,27 +215,27 @@ export class JournalReflectPlugin extends Plugin {
         }
 
         // Fallback to global settings or built-in defaults
-        return this.getDefaultPrompt(type);
+        return this.getDefaultPrompt(promptKey);
     }
 
-    private async getDefaultPrompt(type: ContentType): Promise<string> {
-        // First, try to use the file specified in global settings
-        const settingsFilePath =
-            type === "reflection"
-                ? this.settings.reflectionPromptFile
-                : this.settings.affirmationPromptFile;
+    private async getDefaultPrompt(promptKey: string): Promise<string> {
+        const promptConfig = this.settings.prompts[promptKey];
+        if (!promptConfig) {
+            throw new Error(`Unknown prompt key: ${promptKey}`);
+        }
 
-        if (settingsFilePath) {
-            const fileContent = await this.readPromptFromFile(settingsFilePath);
+        // First, try to use the file specified in prompt config
+        if (promptConfig.promptFile) {
+            const fileContent = await this.readPromptFromFile(
+                promptConfig.promptFile,
+            );
             if (fileContent) {
                 return fileContent;
             }
         }
 
-        // Fall back to built-in defaults
-        return type === "reflection"
-            ? DEFAULT_REFLECTION_PROMPT
-            : DEFAULT_AFFIRMATION_PROMPT;
+        // Final fallback for legacy prompts
+        return DEFAULT_PROMPT;
     }
 
     private async readPromptFromFile(
@@ -280,7 +259,7 @@ export class JournalReflectPlugin extends Plugin {
     private async getGeneratedContent(
         documentText: string,
         systemPrompt: string,
-        type: ContentType,
+        promptKey: string,
     ): Promise<string | null> {
         if (!documentText.trim()) {
             new Notice("Document is empty. Write something first!");
@@ -302,7 +281,9 @@ export class JournalReflectPlugin extends Plugin {
             return null;
         }
 
-        new Notice(`Generating ${CONTENT_TYPE_LABELS[type]}...`);
+        const displayLabel =
+            this.settings.prompts[promptKey]?.displayLabel || promptKey;
+        new Notice(`Generating ${displayLabel}...`);
 
         return await this.ollamaClient.generate(
             this.settings.modelName,

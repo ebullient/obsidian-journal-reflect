@@ -1,4 +1,5 @@
 import { type App, PluginSettingTab, Setting } from "obsidian";
+import type { PromptConfig } from "./@types/settings";
 import type { JournalReflectPlugin } from "./journal-Plugin";
 
 export class JournalReflectSettingsTab extends PluginSettingTab {
@@ -49,35 +50,22 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     }),
             );
 
-        new Setting(containerEl)
-            .setName("Reflection Prompt File")
-            .setDesc(
-                "Path to file containing reflection prompt (leave empty to use built-in default)",
-            )
-            .addText((text) =>
-                text
-                    .setPlaceholder("prompts/reflection.md")
-                    .setValue(this.plugin.settings.reflectionPromptFile)
-                    .onChange(async (value) => {
-                        this.plugin.settings.reflectionPromptFile =
-                            value.trim();
-                        await this.plugin.saveSettings();
-                    }),
-            );
+        containerEl.createEl("h3", { text: "Prompt Configurations" });
+        containerEl.createEl("p", {
+            text: "Configure different types of prompts. Each prompt creates two commands: one that adds content at the end of the document, and one that adds at the cursor position.",
+        });
+
+        this.displayPromptConfigs(containerEl);
 
         new Setting(containerEl)
-            .setName("Affirmation Prompt File")
-            .setDesc(
-                "Path to file containing affirmation prompt (leave empty to use built-in default)",
-            )
-            .addText((text) =>
-                text
-                    .setPlaceholder("prompts/affirmation.md")
-                    .setValue(this.plugin.settings.affirmationPromptFile)
-                    .onChange(async (value) => {
-                        this.plugin.settings.affirmationPromptFile =
-                            value.trim();
-                        await this.plugin.saveSettings();
+            .setName("Add New Prompt")
+            .setDesc("Add a new prompt configuration")
+            .addButton((button) =>
+                button
+                    .setButtonText("Add Prompt")
+                    .setCta()
+                    .onClick(() => {
+                        this.addNewPrompt();
                     }),
             );
 
@@ -135,22 +123,95 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
 
         containerEl.createEl("h3", { text: "Usage" });
         const usage = containerEl.createEl("div");
-        usage.createEl("p", { text: "Four commands are available:" });
+        usage.createEl("p", {
+            text: "For each configured prompt, two commands are automatically created:",
+        });
         const list = usage.createEl("ul");
         list.createEl("li", {
-            text: "Generate reflection question - Adds a reflection question at the end of the document",
+            text: "Generate [prompt name] - Adds content at the end of the document",
         });
         list.createEl("li", {
-            text: "Generate reflection at cursor - Adds a reflection question at the current cursor position",
-        });
-        list.createEl("li", {
-            text: "Generate affirmation - Adds an affirmation at the end of the document",
-        });
-        list.createEl("li", {
-            text: "Generate affirmation at cursor - Adds an affirmation at the current cursor position",
+            text: "Generate [prompt name] at cursor - Adds content at the current cursor position",
         });
         usage.createEl("p", {
-            text: "Reflections and affirmations appear as blockquotes (>) in your journal.",
+            text: "Generated content appears as blockquotes (>) in your journal.",
         });
+    }
+
+    displayPromptConfigs(containerEl: HTMLElement): void {
+        for (const [promptKey, promptConfig] of Object.entries(
+            this.plugin.settings.prompts,
+        )) {
+            const promptSection = containerEl.createEl("div", {
+                cls: "setting-item-group journal-reflect-prompt-config",
+            });
+
+            promptSection.createEl("h4", {
+                text: `${promptConfig.displayLabel} Configuration`,
+            });
+
+            new Setting(promptSection)
+                .setName("Display Label")
+                .setDesc("Label shown in commands and notifications")
+                .addText((text) =>
+                    text
+                        .setValue(promptConfig.displayLabel)
+                        .onChange(async (value) => {
+                            this.plugin.settings.prompts[
+                                promptKey
+                            ].displayLabel = value.trim();
+                            await this.plugin.saveSettings();
+                        }),
+                );
+
+            new Setting(promptSection)
+                .setName("Prompt File")
+                .setDesc(
+                    "Path to file containing prompt (leave empty to use inline prompt)",
+                )
+                .addText((text) =>
+                    text
+                        .setPlaceholder("prompts/my-prompt.md")
+                        .setValue(promptConfig.promptFile)
+                        .onChange(async (value) => {
+                            this.plugin.settings.prompts[promptKey].promptFile =
+                                value.trim();
+                            await this.plugin.saveSettings();
+                        }),
+                );
+
+            if (promptKey !== "reflection") {
+                new Setting(promptSection)
+                    .setName("Remove Prompt")
+                    .setDesc("Delete this prompt configuration")
+                    .addButton((button) =>
+                        button
+                            .setButtonText("Remove")
+                            .setWarning()
+                            .onClick(() => {
+                                this.removePrompt(promptKey);
+                            }),
+                    );
+            }
+        }
+    }
+
+    async addNewPrompt(): Promise<void> {
+        const promptKey = `custom-${Date.now()}`;
+        const newPrompt: PromptConfig = {
+            name: promptKey,
+            displayLabel: "Custom Prompt",
+            promptFile: "",
+        };
+
+        this.plugin.settings.prompts[promptKey] = newPrompt;
+        await this.plugin.saveSettings();
+        this.display(); // Refresh the settings view
+    }
+
+    async removePrompt(promptKey: string): Promise<void> {
+        delete this.plugin.settings.prompts[promptKey];
+        await this.plugin.saveSettings();
+        this.display(); // Refresh the settings view
     }
 }
