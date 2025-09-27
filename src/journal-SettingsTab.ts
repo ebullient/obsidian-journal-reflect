@@ -50,16 +50,33 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
-            .setName("System Prompt")
+            .setName("Reflection Prompt File")
             .setDesc(
-                "Instructions for the AI on how to generate reflection questions",
+                "Path to file containing reflection prompt (leave empty to use built-in default)",
             )
-            .addTextArea((text) =>
+            .addText((text) =>
                 text
-                    .setPlaceholder("Enter system prompt...")
-                    .setValue(this.plugin.settings.systemPrompt)
+                    .setPlaceholder("prompts/reflection.md")
+                    .setValue(this.plugin.settings.reflectionPromptFile)
                     .onChange(async (value) => {
-                        this.plugin.settings.systemPrompt = value;
+                        this.plugin.settings.reflectionPromptFile =
+                            value.trim();
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName("Affirmation Prompt File")
+            .setDesc(
+                "Path to file containing affirmation prompt (leave empty to use built-in default)",
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("prompts/affirmation.md")
+                    .setValue(this.plugin.settings.affirmationPromptFile)
+                    .onChange(async (value) => {
+                        this.plugin.settings.affirmationPromptFile =
+                            value.trim();
                         await this.plugin.saveSettings();
                     }),
             );
@@ -118,16 +135,22 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
 
         containerEl.createEl("h3", { text: "Usage" });
         const usage = containerEl.createEl("div");
-        usage.createEl("p", { text: "Two commands are available:" });
+        usage.createEl("p", { text: "Four commands are available:" });
         const list = usage.createEl("ul");
         list.createEl("li", {
-            text: "Generate reflection question - Adds a question at the end of the document",
+            text: "Generate reflection question - Adds a reflection question at the end of the document",
         });
         list.createEl("li", {
-            text: "Generate reflection at cursor - Adds a question at the current cursor position",
+            text: "Generate reflection at cursor - Adds a reflection question at the current cursor position",
+        });
+        list.createEl("li", {
+            text: "Generate affirmation - Adds an affirmation at the end of the document",
+        });
+        list.createEl("li", {
+            text: "Generate affirmation at cursor - Adds an affirmation at the current cursor position",
         });
         usage.createEl("p", {
-            text: "Reflection questions appear as blockquotes (>) in your journal.",
+            text: "Reflections and affirmations appear as blockquotes (>) in your journal.",
         });
     }
 }

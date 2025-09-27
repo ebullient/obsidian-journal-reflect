@@ -2,7 +2,7 @@ import { Notice } from "obsidian";
 import { Ollama } from "ollama/browser";
 
 export interface IOllamaClient {
-    generateReflection(
+    generate(
         model: string,
         systemPrompt: string,
         documentText: string,
@@ -18,19 +18,15 @@ export class OllamaClient implements IOllamaClient {
         this.ollama = new Ollama({ host: baseUrl });
     }
 
-    async generateReflection(
+    async generate(
         model: string,
         systemPrompt: string,
         documentText: string,
     ): Promise<string | null> {
         try {
-            const prompt = `Suggest a reflection question for this journal:
-
-${documentText}`;
-
             const response = await this.ollama.generate({
                 model: model,
-                prompt: prompt,
+                prompt: documentText,
                 system: systemPrompt,
                 stream: false,
             });

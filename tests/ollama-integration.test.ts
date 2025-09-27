@@ -59,7 +59,7 @@ describe("OllamaClient Integration Test", () => {
         const systemPrompt = "You are a thoughtful journal reflection coach. Ask insightful, open-ended questions.";
         const journalText = "Today I went for a walk in the park and saw beautiful autumn leaves. It made me feel peaceful and grateful.";
 
-        const reflection = await client.generateReflection(model, systemPrompt, journalText);
+        const reflection = await client.generate(model, systemPrompt, journalText);
 
         expect(reflection).toBeTruthy();
         expect(typeof reflection).toBe('string');
@@ -68,12 +68,26 @@ describe("OllamaClient Integration Test", () => {
         console.log(`💭 Generated reflection: "${reflection}"`);
     });
 
+    it("should generate an affirmation", async () => {
+        const model = availableModels[0];
+        const systemPrompt = "You are a supportive coach. Provide encouraging, personalized affirmations.";
+        const journalText = "Today I struggled with confidence during my presentation at work, but I pushed through and finished it.";
+
+        const affirmation = await client.generate(model, systemPrompt, journalText);
+
+        expect(affirmation).toBeTruthy();
+        expect(typeof affirmation).toBe('string');
+        expect(affirmation!.length).toBeGreaterThan(0);
+
+        console.log(`🌟 Generated affirmation: "${affirmation}"`);
+    });
+
     it("should handle empty journal text gracefully", async () => {
         const model = availableModels[0];
         const systemPrompt = "You are helpful.";
         const journalText = "";
 
-        const reflection = await client.generateReflection(model, systemPrompt, journalText);
+        const reflection = await client.generate(model, systemPrompt, journalText);
 
         // Should still generate something, even for empty input
         expect(reflection).toBeTruthy();
