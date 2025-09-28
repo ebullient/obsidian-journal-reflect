@@ -41,31 +41,27 @@ export class JournalReflectPlugin extends Plugin {
         for (const [promptKey, promptConfig] of Object.entries(
             this.settings.prompts,
         )) {
-            const mainCommandId = `journal-${promptKey}`;
-            const cursorCommandId = `journal-${promptKey}-cursor`;
+            const commandId = `journal-${promptKey}`;
 
-            // Generate main command
             this.addCommand({
-                id: mainCommandId,
+                id: commandId,
                 name: `Generate ${promptConfig.displayLabel}`,
+                editorCallback: async (
+                    editor: Editor,
+                    ctx: MarkdownView | MarkdownFileInfo,
+                ) => {
+                    await this.generateContentWithEditor(
+                        editor,
+                        ctx,
+                        promptKey,
+                    );
+                },
                 callback: async () => {
                     await this.generateContent(promptKey);
                 },
             });
 
-            // Generate cursor command
-            this.addCommand({
-                id: cursorCommandId,
-                name: `Generate ${promptConfig.displayLabel} at cursor`,
-                editorCallback: async (
-                    editor: Editor,
-                    ctx: MarkdownView | MarkdownFileInfo,
-                ) => {
-                    await this.generateContentAtCursor(editor, ctx, promptKey);
-                },
-            });
-
-            this.commandIds.push(mainCommandId, cursorCommandId);
+            this.commandIds.push(commandId);
         }
     }
 
@@ -98,20 +94,14 @@ export class JournalReflectPlugin extends Plugin {
             return;
         }
 
-        const docContent = currentView.editor.getValue();
-        const systemPrompt = await this.resolvePrompt(currentView, promptKey);
-        const content = await this.getGeneratedContent(
-            docContent,
-            systemPrompt,
+        await this.generateContentWithEditor(
+            currentView.editor,
+            currentView,
             promptKey,
         );
-
-        if (content) {
-            this.insertContentAtEnd(currentView, content, promptKey);
-        }
     }
 
-    async generateContentAtCursor(
+    async generateContentWithEditor(
         editor: Editor,
         ctx: MarkdownView | MarkdownFileInfo,
         promptKey: string,
@@ -124,15 +114,19 @@ export class JournalReflectPlugin extends Plugin {
             return;
         }
 
+        const expandedDocContent = await this.expandLinkedFiles(
+            file,
+            docContent,
+        );
         const systemPrompt = await this.resolvePromptFromFile(file, promptKey);
         const content = await this.getGeneratedContent(
-            docContent,
+            expandedDocContent,
             systemPrompt,
             promptKey,
         );
 
         if (content) {
-            this.insertContentAtCursor(editor, content, promptKey);
+            this.insertContent(editor, content, promptKey);
         }
     }
 
@@ -143,43 +137,33 @@ export class JournalReflectPlugin extends Plugin {
             .join("\n");
     }
 
-    private insertContentAtEnd(
-        view: MarkdownView,
-        content: string,
-        promptKey: string,
-    ): void {
-        const formattedContent = this.formatAsBlockquote(content);
-        const cursorPos = view.editor.getCursor();
-        view.editor.setLine(
-            cursorPos.line,
-            `${view.editor.getLine(cursorPos.line)}\n\n${formattedContent}\n\n`,
-        );
-        const displayLabel =
-            this.settings.prompts[promptKey]?.displayLabel || promptKey;
-        new Notice(`Inserted ${displayLabel}`);
-    }
-
-    private insertContentAtCursor(
+    private insertContent(
         editor: Editor,
         content: string,
         promptKey: string,
     ): void {
         const formattedContent = this.formatAsBlockquote(content);
-        editor.replaceSelection(`${formattedContent}\n\n`);
+        const cursor = editor.getCursor();
+        const currentLine = editor.getLine(cursor.line);
+        const isAtEndOfLine = cursor.ch === currentLine.length;
+        const isEmptyLine = currentLine.trim() === "";
+
+        let insertText: string;
+        if (isEmptyLine) {
+            // Empty line: just insert the content
+            insertText = `${formattedContent}\n\n`;
+        } else if (isAtEndOfLine) {
+            // End of line with content: add newlines before content
+            insertText = `\n\n${formattedContent}\n\n`;
+        } else {
+            // Middle of line: add newlines around content
+            insertText = `\n\n${formattedContent}\n\n`;
+        }
+
+        editor.replaceSelection(insertText);
         const displayLabel =
             this.settings.prompts[promptKey]?.displayLabel || promptKey;
-        new Notice(`Inserted ${displayLabel} at cursor`);
-    }
-
-    private async resolvePrompt(
-        view: MarkdownView,
-        promptKey: string,
-    ): Promise<string> {
-        const file = view.file;
-        if (!file) {
-            return this.getDefaultPrompt(promptKey);
-        }
-        return this.resolvePromptFromFile(file, promptKey);
+        new Notice(`Inserted ${displayLabel}`);
     }
 
     private async resolvePromptFromFile(
@@ -270,6 +254,59 @@ export class JournalReflectPlugin extends Plugin {
             new Notice(`Prompt file not found: ${promptFilePath}`);
         }
         return null;
+    }
+
+    private async expandLinkedFiles(
+        sourceFile: TFile | null,
+        content: string,
+    ): Promise<string> {
+        if (!sourceFile) {
+            return content;
+        }
+
+        let expandedContent = content;
+        const fileCache = this.app.metadataCache.getFileCache(sourceFile);
+
+        if (!fileCache) {
+            return content;
+        }
+
+        const processedLinks = new Set<string>();
+
+        // Process both links and embeds (fileCache already filters out external URLs)
+        const allLinks = [
+            ...(fileCache.links || []),
+            ...(fileCache.embeds || []),
+        ];
+
+        for (const linkCache of allLinks) {
+            // Skip if we've already processed this link target
+            if (processedLinks.has(linkCache.link)) {
+                continue;
+            }
+            processedLinks.add(linkCache.link);
+
+            const targetFile = this.app.metadataCache.getFirstLinkpathDest(
+                linkCache.link,
+                sourceFile.path,
+            );
+
+            if (targetFile) {
+                try {
+                    const linkedContent =
+                        await this.app.vault.cachedRead(targetFile);
+                    const separator = `\n\n--- Content from [[${linkCache.link}]] ---\n`;
+                    expandedContent += separator + linkedContent;
+                } catch (error) {
+                    console.warn(
+                        `Could not read linked file: ${linkCache.link}`,
+                        error,
+                    );
+                }
+            }
+        }
+
+        return expandedContent;
     }
 
     private async getGeneratedContent(

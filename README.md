@@ -5,7 +5,7 @@ An Obsidian plugin that uses local AI (Ollama) to generate thoughtful reflection
 ## Features
 
 - **AI-Powered Reflections**: Uses your local Ollama instance to generate personalized reflection questions
-- **Two Insertion Modes**: Add reflections at the document end or at your current cursor position
+- **Smart Insertion**: Add reflections at your cursor position with intelligent formatting
 - **Privacy-First**: All processing happens locally using your own Ollama instance
 - **Customizable**: Configure system prompts, model selection, and Ollama connection settings
 
@@ -24,10 +24,9 @@ An Obsidian plugin that uses local AI (Ollama) to generate thoughtful reflection
 ## Usage
 
 Use the command palette to access:
-- **Generate reflection question** - Adds a question at the end of the document
-- **Generate reflection at cursor** - Adds a question at the current cursor position
+- **Generate reflection question** - Adds a question at your cursor position
 
-Reflection questions appear as blockquotes (>) in your journal.
+Reflection questions appear as blockquotes (>) in your journal. Position your cursor where you want the reflection to appear.
 
 ## Configuration
 

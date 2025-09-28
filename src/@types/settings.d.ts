@@ -2,7 +2,7 @@ export interface PromptConfig {
     name: string;
     displayLabel: string;
     promptFile: string;
-    rompt?: string;
+    prompt?: string;
 }
 
 export interface JournalReflectSettings {

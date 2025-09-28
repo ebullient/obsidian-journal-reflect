@@ -17,14 +17,18 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
         await this.plugin.saveSettings();
     }
 
+    private cloneSettings(): JournalReflectSettings {
+        return JSON.parse(JSON.stringify(this.plugin.settings));
+    }
+
     async reset() {
-        this.newSettings = JSON.parse(JSON.stringify(this.plugin.settings));
+        this.newSettings = this.cloneSettings();
         this.display();
     }
 
     display(): void {
         if (!this.newSettings) {
-            this.newSettings = JSON.parse(JSON.stringify(this.plugin.settings));
+            this.newSettings = this.cloneSettings();
         }
 
         const { containerEl } = this;
@@ -67,7 +71,13 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     .setPlaceholder("http://localhost:11434")
                     .setValue(this.newSettings.ollamaUrl)
                     .onChange((value) => {
-                        this.newSettings.ollamaUrl = value.trim();
+                        const trimmed = value.trim();
+                        if (trimmed && !trimmed.startsWith("http")) {
+                            // Auto-prepend http:// if user forgets protocol
+                            this.newSettings.ollamaUrl = `http://${trimmed}`;
+                        } else {
+                            this.newSettings.ollamaUrl = trimmed;
+                        }
                     }),
             );
 
@@ -87,7 +97,7 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
 
         containerEl.createEl("h3", { text: "Prompt Configurations" });
         containerEl.createEl("p", {
-            text: "Configure different types of prompts. Each prompt creates two commands: one that adds content at the end of the document, and one that adds at the cursor position.",
+            text: "Configure different types of prompts. Each prompt creates a command that adds content at your cursor position.",
         });
 
         this.displayPromptConfigs(containerEl);
@@ -161,17 +171,14 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
         containerEl.createEl("h3", { text: "Usage" });
         const usage = containerEl.createEl("div");
         usage.createEl("p", {
-            text: "For each configured prompt, two commands are automatically created:",
+            text: "For each configured prompt, a command is automatically created:",
         });
         const list = usage.createEl("ul");
         list.createEl("li", {
-            text: "Generate [prompt name] - Adds content at the end of the document",
-        });
-        list.createEl("li", {
-            text: "Generate [prompt name] at cursor - Adds content at the current cursor position",
+            text: "Generate [prompt name] - Adds content at your cursor position",
         });
         usage.createEl("p", {
-            text: "Generated content appears as blockquotes (>) in your journal.",
+            text: "Generated content appears as blockquotes (>) in your journal. Position your cursor where you want the content to appear.",
         });
     }
 
@@ -230,8 +237,12 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
         }
     }
 
+    private generatePromptKey(): string {
+        return `custom-${Date.now()}`;
+    }
+
     addNewPrompt(): void {
-        const promptKey = `custom-${Date.now()}`;
+        const promptKey = this.generatePromptKey();
         const newPrompt: PromptConfig = {
             name: promptKey,
             displayLabel: "Custom Prompt",
