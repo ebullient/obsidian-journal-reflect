@@ -1,20 +1,57 @@
 import { type App, PluginSettingTab, Setting } from "obsidian";
-import type { PromptConfig } from "./@types/settings";
+import type { JournalReflectSettings, PromptConfig } from "./@types/settings";
+import { OllamaClient } from "./journal-OllamaClient";
 import type { JournalReflectPlugin } from "./journal-Plugin";
 
 export class JournalReflectSettingsTab extends PluginSettingTab {
     plugin: JournalReflectPlugin;
+    newSettings!: JournalReflectSettings;
 
     constructor(app: App, plugin: JournalReflectPlugin) {
         super(app, plugin);
         this.plugin = plugin;
     }
 
+    async save() {
+        this.plugin.settings = this.newSettings;
+        await this.plugin.saveSettings();
+    }
+
+    async reset() {
+        this.newSettings = JSON.parse(JSON.stringify(this.plugin.settings));
+        this.display();
+    }
+
     display(): void {
+        if (!this.newSettings) {
+            this.newSettings = JSON.parse(JSON.stringify(this.plugin.settings));
+        }
+
         const { containerEl } = this;
         containerEl.empty();
 
         containerEl.createEl("h2", { text: "Journal Reflect Settings" });
+
+        new Setting(containerEl)
+            .setName("Save Settings")
+            .setClass("journal-reflect-save-reset")
+            .addButton((button) =>
+                button
+                    .setButtonText("Reset")
+                    .setTooltip("Reset to current saved settings")
+                    .onClick(() => {
+                        this.reset();
+                    }),
+            )
+            .addButton((button) =>
+                button
+                    .setButtonText("Save")
+                    .setCta()
+                    .setTooltip("Save all changes")
+                    .onClick(async () => {
+                        await this.save();
+                    }),
+            );
 
         containerEl.createEl("p", {
             text: "Configure your local Ollama instance for AI-powered journal reflections.",
@@ -28,10 +65,9 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             .addText((text) =>
                 text
                     .setPlaceholder("http://localhost:11434")
-                    .setValue(this.plugin.settings.ollamaUrl)
-                    .onChange(async (value) => {
-                        this.plugin.settings.ollamaUrl = value.trim();
-                        await this.plugin.saveSettings();
+                    .setValue(this.newSettings.ollamaUrl)
+                    .onChange((value) => {
+                        this.newSettings.ollamaUrl = value.trim();
                     }),
             );
 
@@ -43,10 +79,9 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             .addText((text) =>
                 text
                     .setPlaceholder("llama3.1")
-                    .setValue(this.plugin.settings.modelName)
-                    .onChange(async (value) => {
-                        this.plugin.settings.modelName = value.trim();
-                        await this.plugin.saveSettings();
+                    .setValue(this.newSettings.modelName)
+                    .onChange((value) => {
+                        this.newSettings.modelName = value.trim();
                     }),
             );
 
@@ -96,13 +131,15 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             testButton.disabled = true;
 
             try {
-                const isConnected =
-                    await this.plugin.ollamaClient.checkConnection();
+                // Create temporary client with current form settings
+                const tempClient = new OllamaClient(this.newSettings.ollamaUrl);
+                const isConnected = await tempClient.checkConnection();
+
                 if (isConnected) {
                     connectionDesc.textContent = "✅ Connected to Ollama";
                     connectionDesc.style.color = "var(--text-success)";
 
-                    const models = await this.plugin.ollamaClient.listModels();
+                    const models = await tempClient.listModels();
                     if (models.length > 0) {
                         connectionDesc.textContent += ` | Available models: ${models.join(", ")}`;
                     }
@@ -140,7 +177,7 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
 
     displayPromptConfigs(containerEl: HTMLElement): void {
         for (const [promptKey, promptConfig] of Object.entries(
-            this.plugin.settings.prompts,
+            this.newSettings.prompts,
         )) {
             const promptSection = containerEl.createEl("div", {
                 cls: "setting-item-group journal-reflect-prompt-config",
@@ -156,11 +193,9 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                 .addText((text) =>
                     text
                         .setValue(promptConfig.displayLabel)
-                        .onChange(async (value) => {
-                            this.plugin.settings.prompts[
-                                promptKey
-                            ].displayLabel = value.trim();
-                            await this.plugin.saveSettings();
+                        .onChange((value) => {
+                            this.newSettings.prompts[promptKey].displayLabel =
+                                value.trim();
                         }),
                 );
 
@@ -173,10 +208,9 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     text
                         .setPlaceholder("prompts/my-prompt.md")
                         .setValue(promptConfig.promptFile)
-                        .onChange(async (value) => {
-                            this.plugin.settings.prompts[promptKey].promptFile =
+                        .onChange((value) => {
+                            this.newSettings.prompts[promptKey].promptFile =
                                 value.trim();
-                            await this.plugin.saveSettings();
                         }),
                 );
 
@@ -196,7 +230,7 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
         }
     }
 
-    async addNewPrompt(): Promise<void> {
+    addNewPrompt(): void {
         const promptKey = `custom-${Date.now()}`;
         const newPrompt: PromptConfig = {
             name: promptKey,
@@ -204,14 +238,17 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             promptFile: "",
         };
 
-        this.plugin.settings.prompts[promptKey] = newPrompt;
-        await this.plugin.saveSettings();
+        this.newSettings.prompts[promptKey] = newPrompt;
         this.display(); // Refresh the settings view
     }
 
-    async removePrompt(promptKey: string): Promise<void> {
-        delete this.plugin.settings.prompts[promptKey];
-        await this.plugin.saveSettings();
+    removePrompt(promptKey: string): void {
+        delete this.newSettings.prompts[promptKey];
         this.display(); // Refresh the settings view
+    }
+
+    /** Save on exit */
+    hide(): void {
+        this.save();
     }
 }

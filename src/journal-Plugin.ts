@@ -14,6 +14,7 @@ import { JournalReflectSettingsTab } from "./journal-SettingsTab";
 export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
     ollamaClient!: OllamaClient;
+    private commandIds: string[] = [];
 
     async onload() {
         console.log("Loading Journal Reflect Plugin");
@@ -27,13 +28,25 @@ export class JournalReflectPlugin extends Plugin {
         this.generateCommands();
     }
 
+    private clearCommands() {
+        for (const commandId of this.commandIds) {
+            this.removeCommand(commandId);
+        }
+        this.commandIds = [];
+    }
+
     private generateCommands() {
+        this.clearCommands();
+
         for (const [promptKey, promptConfig] of Object.entries(
             this.settings.prompts,
         )) {
+            const mainCommandId = `journal-${promptKey}`;
+            const cursorCommandId = `journal-${promptKey}-cursor`;
+
             // Generate main command
             this.addCommand({
-                id: `journal-${promptKey}`,
+                id: mainCommandId,
                 name: `Generate ${promptConfig.displayLabel}`,
                 callback: async () => {
                     await this.generateContent(promptKey);
@@ -42,7 +55,7 @@ export class JournalReflectPlugin extends Plugin {
 
             // Generate cursor command
             this.addCommand({
-                id: `journal-${promptKey}-cursor`,
+                id: cursorCommandId,
                 name: `Generate ${promptConfig.displayLabel} at cursor`,
                 editorCallback: async (
                     editor: Editor,
@@ -51,6 +64,8 @@ export class JournalReflectPlugin extends Plugin {
                     await this.generateContentAtCursor(editor, ctx, promptKey);
                 },
             });
+
+            this.commandIds.push(mainCommandId, cursorCommandId);
         }
     }
 
@@ -72,6 +87,7 @@ export class JournalReflectPlugin extends Plugin {
     async saveSettings() {
         await this.saveData(this.settings);
         this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
+        this.generateCommands();
     }
 
     async generateContent(promptKey: string) {
