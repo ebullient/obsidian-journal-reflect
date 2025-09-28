@@ -89,8 +89,8 @@ describe("OllamaClient Integration Test", () => {
 
         const reflection = await client.generate(model, systemPrompt, journalText);
 
-        // Should still generate something, even for empty input
-        expect(reflection).toBeTruthy();
+        // Should return empty string for empty input
+        expect(reflection).toBe("");
         expect(typeof reflection).toBe('string');
     });
 });

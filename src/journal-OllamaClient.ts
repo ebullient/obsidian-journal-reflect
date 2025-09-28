@@ -1,5 +1,9 @@
-import { Notice } from "obsidian";
-import { Ollama } from "ollama/browser";
+import { Notice, requestUrl } from "obsidian";
+import type {
+    GenerateRequest,
+    GenerateResponse,
+    ListResponse,
+} from "ollama/browser";
 
 export interface IOllamaClient {
     generate(
@@ -12,10 +16,10 @@ export interface IOllamaClient {
 }
 
 export class OllamaClient implements IOllamaClient {
-    private ollama: Ollama;
+    private baseUrl: string;
 
     constructor(baseUrl: string) {
-        this.ollama = new Ollama({ host: baseUrl });
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     }
 
     async generate(
@@ -24,14 +28,22 @@ export class OllamaClient implements IOllamaClient {
         documentText: string,
     ): Promise<string | null> {
         try {
-            const response = await this.ollama.generate({
+            const generateRequest: GenerateRequest = {
                 model: model,
                 prompt: documentText,
                 system: systemPrompt,
                 stream: false,
+            };
+
+            const response = await requestUrl({
+                url: `${this.baseUrl}/api/generate`,
+                method: "POST",
+                contentType: "application/json",
+                body: JSON.stringify(generateRequest),
             });
 
-            return response.response?.trim() || null;
+            const data: GenerateResponse = response.json;
+            return data.response !== undefined ? data.response.trim() : null;
         } catch (error) {
             console.error("Error calling Ollama API: ", error);
             const errorMsg =
@@ -43,7 +55,10 @@ export class OllamaClient implements IOllamaClient {
 
     async checkConnection(): Promise<boolean> {
         try {
-            await this.ollama.list();
+            await requestUrl({
+                url: `${this.baseUrl}/api/tags`,
+                method: "GET",
+            });
             return true;
         } catch (_error) {
             return false;
@@ -52,8 +67,13 @@ export class OllamaClient implements IOllamaClient {
 
     async listModels(): Promise<string[]> {
         try {
-            const response = await this.ollama.list();
-            return response.models?.map((model) => model.name) || [];
+            const response = await requestUrl({
+                url: `${this.baseUrl}/api/tags`,
+                method: "GET",
+            });
+
+            const data: ListResponse = response.json;
+            return data.models?.map((model) => model.name) || [];
         } catch (error) {
             console.error("Error fetching models:", error);
             return [];
