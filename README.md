@@ -61,3 +61,7 @@ prompt-file: "prompts/creative-writing-coach.md"
 ## Privacy & Security
 
 This plugin only communicates with your local Ollama instance. No data is sent to external services.
+
+## Acknowledgements
+
+This is based on [Build an LLM Journaling Reflection Plugin for Obsidian](https://thomaschang.me/blog/obsidian-reflect) by Thomas Chang.
