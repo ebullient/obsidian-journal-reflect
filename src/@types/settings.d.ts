@@ -3,6 +3,7 @@ export interface PromptConfig {
     displayLabel: string;
     promptFile: string;
     prompt?: string;
+    calloutHeading?: string;
 }
 
 export interface JournalReflectSettings {

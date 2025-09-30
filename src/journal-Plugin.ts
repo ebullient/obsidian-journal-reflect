@@ -130,11 +130,15 @@ export class JournalReflectPlugin extends Plugin {
         }
     }
 
-    private formatAsBlockquote(content: string): string {
-        return content
-            .split("\n")
-            .map((line) => `> ${line}`)
-            .join("\n");
+    private formatAsBlockquote(
+        content: string,
+        calloutHeading?: string,
+    ): string {
+        const lines = content.split("\n").map((line) => `> ${line}`);
+        if (calloutHeading) {
+            lines.unshift(`> ${calloutHeading}`);
+        }
+        return lines.join("\n");
     }
 
     private insertContent(
@@ -142,7 +146,12 @@ export class JournalReflectPlugin extends Plugin {
         content: string,
         promptKey: string,
     ): void {
-        const formattedContent = this.formatAsBlockquote(content);
+        const promptConfig = this.settings.prompts[promptKey];
+        const calloutHeading = promptConfig?.calloutHeading;
+        const formattedContent = this.formatAsBlockquote(
+            content,
+            calloutHeading,
+        );
         const cursor = editor.getCursor();
         const currentLine = editor.getLine(cursor.line);
         const isAtEndOfLine = cursor.ch === currentLine.length;
