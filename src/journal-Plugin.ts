@@ -15,6 +15,7 @@ export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
     ollamaClient!: OllamaClient;
     private commandIds: string[] = [];
+    private excludeLinkPatterns: RegExp[] = [];
 
     async onload() {
         console.log("Loading Journal Reflect Plugin");
@@ -78,11 +79,13 @@ export class JournalReflectPlugin extends Plugin {
         if (this.ollamaClient) {
             this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
         }
+        this.compileExcludePatterns();
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
         this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
+        this.compileExcludePatterns();
         this.generateCommands();
     }
 
@@ -173,6 +176,32 @@ export class JournalReflectPlugin extends Plugin {
         const displayLabel =
             this.settings.prompts[promptKey]?.displayLabel || promptKey;
         new Notice(`Inserted ${displayLabel}`);
+    }
+
+    private compileExcludePatterns(): void {
+        this.excludeLinkPatterns = [];
+        const patterns = this.settings.excludeLinkPatterns
+            .split("\n")
+            .map((p) => p.trim())
+            .filter((p) => p.length > 0);
+
+        for (const pattern of patterns) {
+            try {
+                this.excludeLinkPatterns.push(new RegExp(pattern));
+            } catch (error) {
+                console.warn(`Invalid exclude link pattern: ${pattern}`, error);
+            }
+        }
+    }
+
+    private shouldExcludeLink(linkCache: {
+        link: string;
+        displayText?: string;
+    }): boolean {
+        const textToCheck = `[${linkCache.displayText}](${linkCache.link})`;
+        return this.excludeLinkPatterns.some((pattern) =>
+            pattern.test(textToCheck),
+        );
     }
 
     private async resolvePromptFromFile(
@@ -268,8 +297,14 @@ export class JournalReflectPlugin extends Plugin {
     private async expandLinkedFiles(
         sourceFile: TFile | null,
         content: string,
+        depth = 0,
     ): Promise<string> {
         if (!sourceFile) {
+            return content;
+        }
+
+        // Limit nesting to 2 levels
+        if (depth >= 2) {
             return content;
         }
 
@@ -289,14 +324,25 @@ export class JournalReflectPlugin extends Plugin {
         ];
 
         for (const linkCache of allLinks) {
+            // Skip if display text matches exclusion pattern
+            if (this.shouldExcludeLink(linkCache)) {
+                console.log(
+                    `Skipping excluded link: ${linkCache.displayText || linkCache.link}`,
+                );
+                continue;
+            }
+
             // Skip if we've already processed this link target
             if (processedLinks.has(linkCache.link)) {
                 continue;
             }
             processedLinks.add(linkCache.link);
 
+            // Parse link to extract path and subpath (heading/block reference)
+            const { path, subpath } = this.parseLinkReference(linkCache.link);
+
             const targetFile = this.app.metadataCache.getFirstLinkpathDest(
-                linkCache.link,
+                path,
                 sourceFile.path,
             );
 
@@ -304,8 +350,29 @@ export class JournalReflectPlugin extends Plugin {
                 try {
                     const linkedContent =
                         await this.app.vault.cachedRead(targetFile);
-                    const separator = `\n\n--- Content from [[${linkCache.link}]] ---\n`;
-                    expandedContent += separator + linkedContent;
+                    const extractedContent = subpath
+                        ? this.extractSubpathContent(
+                              targetFile,
+                              linkedContent,
+                              subpath,
+                          )
+                        : linkedContent;
+
+                    // Recursively expand links in the embedded content
+                    const fullyExpandedContent = await this.expandLinkedFiles(
+                        targetFile,
+                        extractedContent,
+                        depth + 1,
+                    );
+
+                    // Format as blockquote callout
+                    const linkDisplay = linkCache.link;
+                    const quotedContent = this.formatAsEmbedBlockquote(
+                        fullyExpandedContent,
+                        linkDisplay,
+                        depth,
+                    );
+                    expandedContent += `\n\n${quotedContent}`;
                 } catch (error) {
                     console.warn(
                         `Could not read linked file: ${linkCache.link}`,
@@ -316,6 +383,82 @@ export class JournalReflectPlugin extends Plugin {
         }
 
         return expandedContent;
+    }
+
+    private formatAsEmbedBlockquote(
+        content: string,
+        linkTarget: string,
+        depth: number,
+    ): string {
+        const prefix = ">".repeat(depth + 1);
+        const lines = content
+            .split("\n")
+            .map((line) => `${prefix} ${line}`)
+            .join("\n");
+        const calloutHeader = `${prefix} [!quote] ${linkTarget}`;
+        return `${calloutHeader}\n${lines}`;
+    }
+
+    private parseLinkReference(link: string): {
+        path: string;
+        subpath: string | null;
+    } {
+        const anchorPos = link.indexOf("#");
+        if (anchorPos < 0) {
+            return { path: link, subpath: null };
+        }
+        return {
+            path: link.substring(0, anchorPos),
+            subpath: link.substring(anchorPos + 1),
+        };
+    }
+
+    private extractSubpathContent(
+        file: TFile,
+        fileContent: string,
+        subpath: string,
+    ): string {
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (!cache) {
+            return fileContent;
+        }
+
+        // Check for block reference (^block-id)
+        if (subpath.startsWith("^")) {
+            const blockId = subpath.substring(1);
+            const block = cache.blocks?.[blockId];
+            if (block) {
+                const lines = fileContent.split("\n");
+                return lines[block.position.start.line] || "";
+            }
+            return fileContent;
+        }
+
+        // Check for heading reference
+        const targetHeading = subpath.replace(/%20/g, " ");
+        const heading = cache.headings?.find(
+            (h) => h.heading === targetHeading,
+        );
+
+        if (heading) {
+            // Find the end of this section
+            const start = heading.position.end.offset;
+            let end = fileContent.length;
+
+            // Find next heading at same or higher level
+            const headingIndex = cache.headings.indexOf(heading);
+            for (const h of cache.headings.slice(headingIndex + 1)) {
+                if (h.level <= heading.level) {
+                    end = h.position.start.offset;
+                    break;
+                }
+            }
+
+            return fileContent.substring(start, end).trim();
+        }
+
+        // If no matching subpath found, return full content
+        return fileContent;
     }
 
     private async getGeneratedContent(

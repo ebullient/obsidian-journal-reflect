@@ -95,6 +95,25 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     }),
             );
 
+        new Setting(containerEl)
+            .setName("Exclude Link Patterns")
+            .setDesc(
+                "Skip links whose that matches these patterns (regex, one pattern per line). Links will be matched in markdown format, e.g. [displayText](linkTarget).",
+            )
+            .addTextArea((text) =>
+                text
+                    .setPlaceholder("^Reflect on\nTODO:\n\\[template\\]")
+                    .setValue(this.newSettings.excludeLinkPatterns)
+                    .onChange((value) => {
+                        this.newSettings.excludeLinkPatterns = value;
+                    }),
+            )
+            .then((setting) => {
+                setting.controlEl
+                    .querySelector("textarea")
+                    ?.setAttribute("rows", "4");
+            });
+
         containerEl.createEl("h3", { text: "Prompt Configurations" });
         containerEl.createEl("p", {
             text: "Configure different types of prompts. Each prompt creates a command that adds content at your cursor position.",

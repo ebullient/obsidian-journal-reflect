@@ -9,5 +9,6 @@ export interface PromptConfig {
 export interface JournalReflectSettings {
     ollamaUrl: string;
     modelName: string;
+    excludeLinkPatterns: string;
     prompts: Record<string, PromptConfig>;
 }
