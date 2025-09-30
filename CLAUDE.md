@@ -14,7 +14,10 @@ You are a senior development peer working alongside a Senior Software Engineer (
 ## Development Guidelines
 
 **Core Principles:**
-- **Follow existing patterns** - Find similar functions in the same module and emulate them
+- **Follow existing patterns** - Before writing new code:
+  1. Search for similar functions in the same module (use `Grep` tool)
+  2. Check method chaining, line breaks, and error handling patterns
+  3. Emulate the style exactly, especially for method chains and async/await
 - **Understand before acting** - Read project structure, but defer extensive file reading until user specifies what to work on
 - **Ask for clarification** when implementation choices or requirements are unclear
 - **Be direct and concise** - Assume high technical competence, reference specific files/line numbers
@@ -45,9 +48,23 @@ You are a senior development peer working alongside a Senior Software Engineer (
 
 ## Code Style Guidelines
 
-- **Line length**: ~80 characters
+- **Line length**: 80 characters (hard limit)
 - **Always use braces** for conditionals
-- **Method chaining**: Break at dots for readability
+- **Method chaining**: Break at dots for readability, even for single chains. This keeps lines under 80 chars and prevents Biome from wrapping unpredictably.
+  ```typescript
+  // GOOD - break at dots
+  const patterns = this.settings.excludeLinkPatterns
+      .split("\n")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
+  // BAD - all on one line
+  const patterns = this.settings.excludeLinkPatterns.split("\n").map((p) => p.trim());
+
+  // GOOD - even single chains if they approach 80 chars
+  const models = data.models
+      ?.map((model) => model.name) || [];
+  ```
 - **Error handling**: `try/catch` with user-friendly `Notice` messages
 - **Async**: Use `async/await` consistently
 
