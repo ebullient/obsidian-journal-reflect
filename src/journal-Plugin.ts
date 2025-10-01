@@ -135,6 +135,7 @@ export class JournalReflectPlugin extends Plugin {
         );
 
         const systemPrompt = await this.resolvePromptFromFile(file, promptKey);
+        console.log(promptKey, "Document preview:", filteredDocContent);
         const content = await this.getGeneratedContent(
             filteredDocContent,
             systemPrompt,
@@ -198,6 +199,7 @@ export class JournalReflectPlugin extends Plugin {
         displayText?: string;
     }): boolean {
         const textToCheck = `[${linkCache.displayText}](${linkCache.link})`;
+        console.log("ShouldIncludeLink", textToCheck, this.excludeLinkPatterns);
         return this.excludeLinkPatterns.some((pattern) =>
             pattern.test(textToCheck),
         );
@@ -266,6 +268,7 @@ export class JournalReflectPlugin extends Plugin {
             const fileContent = await this.readPromptFromFile(
                 promptConfig.promptFile,
             );
+            console.log("Using file prompt", promptConfig.promptFile);
             if (fileContent) {
                 return fileContent;
             }
@@ -289,6 +292,7 @@ export class JournalReflectPlugin extends Plugin {
             }
         } else {
             new Notice(`Prompt file not found: ${promptFilePath}`);
+            console.warn("Prompt file not found:", promptFilePath);
         }
         return null;
     }
@@ -297,6 +301,7 @@ export class JournalReflectPlugin extends Plugin {
         sourceFile: TFile | null,
         content: string,
         depth = 0,
+        processedFiles = new Set<string>(),
     ): Promise<string> {
         if (!sourceFile) {
             return content;
@@ -306,6 +311,9 @@ export class JournalReflectPlugin extends Plugin {
         if (depth >= 2) {
             return content;
         }
+
+        // Mark this file as processed to prevent circular references
+        processedFiles.add(sourceFile.path);
 
         let expandedContent = content;
         const fileCache = this.app.metadataCache.getFileCache(sourceFile);
@@ -346,6 +354,14 @@ export class JournalReflectPlugin extends Plugin {
             );
 
             if (targetFile) {
+                // Skip if we've already processed this file (circular reference)
+                if (processedFiles.has(targetFile.path)) {
+                    console.log(
+                        `Skipping circular reference: ${targetFile.path}`,
+                    );
+                    continue;
+                }
+
                 try {
                     const linkedContent =
                         await this.app.vault.cachedRead(targetFile);
@@ -362,6 +378,7 @@ export class JournalReflectPlugin extends Plugin {
                         targetFile,
                         extractedContent,
                         depth + 1,
+                        processedFiles,
                     );
 
                     // Format as blockquote callout
