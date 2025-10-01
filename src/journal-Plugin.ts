@@ -10,6 +10,12 @@ import type { JournalReflectSettings } from "./@types/settings";
 import { DEFAULT_PROMPT, DEFAULT_SETTINGS } from "./journal-Constants";
 import { OllamaClient } from "./journal-OllamaClient";
 import { JournalReflectSettingsTab } from "./journal-SettingsTab";
+import {
+    filterCallouts,
+    formatAsBlockquote,
+    formatAsEmbedBlockquote,
+    parseLinkReference,
+} from "./journal-Utils";
 
 export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
@@ -121,9 +127,16 @@ export class JournalReflectPlugin extends Plugin {
             file,
             docContent,
         );
+
+        const promptConfig = this.settings.prompts[promptKey];
+        const filteredDocContent = filterCallouts(
+            expandedDocContent,
+            promptConfig?.excludeCalloutTypes || "",
+        );
+
         const systemPrompt = await this.resolvePromptFromFile(file, promptKey);
         const content = await this.getGeneratedContent(
-            expandedDocContent,
+            filteredDocContent,
             systemPrompt,
             promptKey,
         );
@@ -133,17 +146,6 @@ export class JournalReflectPlugin extends Plugin {
         }
     }
 
-    private formatAsBlockquote(
-        content: string,
-        calloutHeading?: string,
-    ): string {
-        const lines = content.split("\n").map((line) => `> ${line}`);
-        if (calloutHeading) {
-            lines.unshift(`> ${calloutHeading}`);
-        }
-        return lines.join("\n");
-    }
-
     private insertContent(
         editor: Editor,
         content: string,
@@ -151,10 +153,7 @@ export class JournalReflectPlugin extends Plugin {
     ): void {
         const promptConfig = this.settings.prompts[promptKey];
         const calloutHeading = promptConfig?.calloutHeading;
-        const formattedContent = this.formatAsBlockquote(
-            content,
-            calloutHeading,
-        );
+        const formattedContent = formatAsBlockquote(content, calloutHeading);
         const cursor = editor.getCursor();
         const currentLine = editor.getLine(cursor.line);
         const isAtEndOfLine = cursor.ch === currentLine.length;
@@ -339,7 +338,7 @@ export class JournalReflectPlugin extends Plugin {
             processedLinks.add(linkCache.link);
 
             // Parse link to extract path and subpath (heading/block reference)
-            const { path, subpath } = this.parseLinkReference(linkCache.link);
+            const { path, subpath } = parseLinkReference(linkCache.link);
 
             const targetFile = this.app.metadataCache.getFirstLinkpathDest(
                 path,
@@ -367,7 +366,7 @@ export class JournalReflectPlugin extends Plugin {
 
                     // Format as blockquote callout
                     const linkDisplay = linkCache.link;
-                    const quotedContent = this.formatAsEmbedBlockquote(
+                    const quotedContent = formatAsEmbedBlockquote(
                         fullyExpandedContent,
                         linkDisplay,
                         depth,
@@ -383,34 +382,6 @@ export class JournalReflectPlugin extends Plugin {
         }
 
         return expandedContent;
-    }
-
-    private formatAsEmbedBlockquote(
-        content: string,
-        linkTarget: string,
-        depth: number,
-    ): string {
-        const prefix = ">".repeat(depth + 1);
-        const lines = content
-            .split("\n")
-            .map((line) => `${prefix} ${line}`)
-            .join("\n");
-        const calloutHeader = `${prefix} [!quote] ${linkTarget}`;
-        return `${calloutHeader}\n${lines}`;
-    }
-
-    private parseLinkReference(link: string): {
-        path: string;
-        subpath: string | null;
-    } {
-        const anchorPos = link.indexOf("#");
-        if (anchorPos < 0) {
-            return { path: link, subpath: null };
-        }
-        return {
-            path: link.substring(0, anchorPos),
-            subpath: link.substring(anchorPos + 1),
-        };
     }
 
     private extractSubpathContent(

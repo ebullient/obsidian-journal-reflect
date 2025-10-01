@@ -256,6 +256,27 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                         }),
                 );
 
+            new Setting(promptSection)
+                .setName("Exclude Callout Types")
+                .setDesc(
+                    "Callout types to skip (one per line, e.g., 'ai', 'magic'). Prevents sending AI text back to the model.",
+                )
+                .addTextArea((text) =>
+                    text
+                        .setPlaceholder("ai\nmagic")
+                        .setValue(promptConfig.excludeCalloutTypes || "")
+                        .onChange((value) => {
+                            this.newSettings.prompts[
+                                promptKey
+                            ].excludeCalloutTypes = value;
+                        }),
+                )
+                .then((setting) => {
+                    setting.controlEl
+                        .querySelector("textarea")
+                        ?.setAttribute("rows", "4");
+                });
+
             if (promptKey !== "reflection") {
                 new Setting(promptSection)
                     .setName("Remove Prompt")

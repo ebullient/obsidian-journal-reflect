@@ -4,6 +4,7 @@ export interface PromptConfig {
     promptFile: string;
     prompt?: string;
     calloutHeading?: string;
+    excludeCalloutTypes?: string;
 }
 
 export interface JournalReflectSettings {
