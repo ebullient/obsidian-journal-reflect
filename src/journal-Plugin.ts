@@ -135,7 +135,6 @@ export class JournalReflectPlugin extends Plugin {
         );
 
         const systemPrompt = await this.resolvePromptFromFile(file, promptKey);
-        console.log(promptKey, "Document preview:", filteredDocContent);
         const content = await this.getGeneratedContent(
             filteredDocContent,
             systemPrompt,
