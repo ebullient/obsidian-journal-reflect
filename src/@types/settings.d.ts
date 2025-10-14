@@ -1,8 +1,6 @@
 export interface PromptConfig {
-    name: string;
     displayLabel: string;
-    promptFile: string;
-    prompt?: string;
+    promptFile?: string;
     calloutHeading?: string;
     excludeCalloutTypes?: string;
 }

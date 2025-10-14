@@ -233,7 +233,7 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                 .addText((text) =>
                     text
                         .setPlaceholder("prompts/my-prompt.md")
-                        .setValue(promptConfig.promptFile)
+                        .setValue(promptConfig.promptFile || "")
                         .onChange((value) => {
                             this.newSettings.prompts[promptKey].promptFile =
                                 value.trim();
@@ -300,9 +300,7 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
     addNewPrompt(): void {
         const promptKey = this.generatePromptKey();
         const newPrompt: PromptConfig = {
-            name: promptKey,
             displayLabel: "Custom Prompt",
-            promptFile: "",
         };
 
         this.newSettings.prompts[promptKey] = newPrompt;

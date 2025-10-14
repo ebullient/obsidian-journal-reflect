@@ -12,14 +12,10 @@ export const DEFAULT_SETTINGS: JournalReflectSettings = {
     excludeLinkPatterns: "",
     prompts: {
         reflection: {
-            name: "reflection",
             displayLabel: "reflection question",
-            promptFile: "",
         },
         affirmation: {
-            name: "affirmation",
             displayLabel: "affirmation",
-            promptFile: "",
         },
     },
 };

@@ -3,14 +3,10 @@ import {
     type MarkdownFileInfo,
     MarkdownView,
     Notice,
-    parseYaml,
     Plugin,
     TFile,
 } from "obsidian";
-import type {
-    JournalReflectSettings,
-    ResolvedPrompt,
-} from "./@types/settings";
+import type { JournalReflectSettings, ResolvedPrompt } from "./@types/settings";
 import { DEFAULT_PROMPT, DEFAULT_SETTINGS } from "./journal-Constants";
 import { OllamaClient } from "./journal-OllamaClient";
 import { JournalReflectSettingsTab } from "./journal-SettingsTab";
@@ -31,12 +27,18 @@ export class JournalReflectPlugin extends Plugin {
         console.log("Loading Journal Reflect Plugin");
 
         await this.loadSettings();
-        this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
 
         this.addSettingTab(new JournalReflectSettingsTab(this.app, this));
 
-        // Dynamically generate commands for each configured prompt
-        this.generateCommands();
+        // Defer initialization until layout is ready
+        this.app.workspace.onLayoutReady(() => {
+            this.updateOllamaClient();
+            this.generateCommands();
+        });
+    }
+
+    private updateOllamaClient(): void {
+        this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
     }
 
     private clearCommands() {
@@ -87,14 +89,14 @@ export class JournalReflectPlugin extends Plugin {
             await this.loadData(),
         );
         if (this.ollamaClient) {
-            this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
+            this.updateOllamaClient();
         }
         this.compileExcludePatterns();
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
-        this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
+        this.updateOllamaClient();
         this.compileExcludePatterns();
         this.generateCommands();
     }
@@ -160,20 +162,11 @@ export class JournalReflectPlugin extends Plugin {
         const formattedContent = formatAsBlockquote(content, calloutHeading);
         const cursor = editor.getCursor();
         const currentLine = editor.getLine(cursor.line);
-        const isAtEndOfLine = cursor.ch === currentLine.length;
         const isEmptyLine = currentLine.trim() === "";
 
-        let insertText: string;
-        if (isEmptyLine) {
-            // Empty line: just insert the content
-            insertText = `${formattedContent}\n\n`;
-        } else if (isAtEndOfLine) {
-            // End of line with content: add newlines before content
-            insertText = `\n\n${formattedContent}\n\n`;
-        } else {
-            // Middle of line: add newlines around content
-            insertText = `\n\n${formattedContent}\n\n`;
-        }
+        const insertText = isEmptyLine
+            ? `${formattedContent}\n\n`
+            : `\n\n${formattedContent}\n\n`;
 
         editor.replaceSelection(insertText);
         const displayLabel =
@@ -208,51 +201,55 @@ export class JournalReflectPlugin extends Plugin {
         );
     }
 
+    private extractFrontmatterValue(
+        frontmatter: Record<string, unknown> | undefined,
+        key: string,
+        promptKey: string,
+    ): string | undefined {
+        if (!frontmatter?.[key]) {
+            return undefined;
+        }
+
+        const value = frontmatter[key];
+        if (typeof value === "string") {
+            return value;
+        }
+        if (typeof value === "object" && value !== null) {
+            const promptValue = (value as Record<string, unknown>)[promptKey];
+            if (typeof promptValue === "string") {
+                return promptValue;
+            }
+        }
+        return undefined;
+    }
+
     private async resolvePromptFromFile(
         file: TFile,
         promptKey: string,
     ): Promise<ResolvedPrompt> {
-        // Get frontmatter using Obsidian's API
         const frontmatter =
             this.app.metadataCache.getFileCache(file)?.frontmatter;
 
-        if (frontmatter) {
-            // Check for direct prompt in frontmatter
-            if (frontmatter.prompt) {
-                if (typeof frontmatter.prompt === "string") {
-                    // Single prompt for all commands
-                    return { prompt: frontmatter.prompt };
-                }
-                if (typeof frontmatter.prompt === "object") {
-                    // Object with separate prompts
-                    const promptValue = frontmatter.prompt[promptKey];
-                    if (typeof promptValue === "string") {
-                        return { prompt: promptValue };
-                    }
-                }
-            }
+        // Check for direct prompt in frontmatter
+        const promptValue = this.extractFrontmatterValue(
+            frontmatter,
+            "prompt",
+            promptKey,
+        );
+        if (promptValue) {
+            return { prompt: promptValue };
+        }
 
-            // Check for prompt-file in frontmatter
-            if (frontmatter["prompt-file"]) {
-                if (typeof frontmatter["prompt-file"] === "string") {
-                    // Single prompt file for all commands
-                    const resolved = await this.readPromptFromFile(
-                        frontmatter["prompt-file"],
-                    );
-                    if (resolved) {
-                        return resolved;
-                    }
-                } else if (typeof frontmatter["prompt-file"] === "object") {
-                    // Object with separate prompt files
-                    const promptFile = frontmatter["prompt-file"][promptKey];
-                    if (typeof promptFile === "string") {
-                        const resolved =
-                            await this.readPromptFromFile(promptFile);
-                        if (resolved) {
-                            return resolved;
-                        }
-                    }
-                }
+        // Check for prompt-file in frontmatter
+        const promptFile = this.extractFrontmatterValue(
+            frontmatter,
+            "prompt-file",
+            promptKey,
+        );
+        if (promptFile) {
+            const resolved = await this.readPromptFromFile(promptFile);
+            if (resolved) {
+                return resolved;
             }
         }
 
@@ -290,7 +287,9 @@ export class JournalReflectPlugin extends Plugin {
                 const promptContent =
                     await this.app.vault.cachedRead(promptFile);
                 const frontmatter =
-                    this.app.metadataCache.getFileCache(promptFile)?.frontmatter;
+                    this.app.metadataCache.getFileCache(
+                        promptFile,
+                    )?.frontmatter;
                 const model =
                     typeof frontmatter?.model === "string"
                         ? frontmatter.model
