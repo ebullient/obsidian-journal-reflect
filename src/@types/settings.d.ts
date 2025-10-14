@@ -7,6 +7,11 @@ export interface PromptConfig {
     excludeCalloutTypes?: string;
 }
 
+export interface ResolvedPrompt {
+    prompt: string;
+    model?: string;
+}
+
 export interface JournalReflectSettings {
     ollamaUrl: string;
     modelName: string;

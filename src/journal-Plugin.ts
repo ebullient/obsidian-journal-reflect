@@ -3,10 +3,14 @@ import {
     type MarkdownFileInfo,
     MarkdownView,
     Notice,
+    parseYaml,
     Plugin,
     TFile,
 } from "obsidian";
-import type { JournalReflectSettings } from "./@types/settings";
+import type {
+    JournalReflectSettings,
+    ResolvedPrompt,
+} from "./@types/settings";
 import { DEFAULT_PROMPT, DEFAULT_SETTINGS } from "./journal-Constants";
 import { OllamaClient } from "./journal-OllamaClient";
 import { JournalReflectSettingsTab } from "./journal-SettingsTab";
@@ -134,10 +138,10 @@ export class JournalReflectPlugin extends Plugin {
             promptConfig?.excludeCalloutTypes || "",
         );
 
-        const systemPrompt = await this.resolvePromptFromFile(file, promptKey);
+        const resolved = await this.resolvePromptFromFile(file, promptKey);
         const content = await this.getGeneratedContent(
             filteredDocContent,
-            systemPrompt,
+            resolved,
             promptKey,
         );
 
@@ -207,7 +211,7 @@ export class JournalReflectPlugin extends Plugin {
     private async resolvePromptFromFile(
         file: TFile,
         promptKey: string,
-    ): Promise<string> {
+    ): Promise<ResolvedPrompt> {
         // Get frontmatter using Obsidian's API
         const frontmatter =
             this.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -217,13 +221,13 @@ export class JournalReflectPlugin extends Plugin {
             if (frontmatter.prompt) {
                 if (typeof frontmatter.prompt === "string") {
                     // Single prompt for all commands
-                    return frontmatter.prompt;
+                    return { prompt: frontmatter.prompt };
                 }
                 if (typeof frontmatter.prompt === "object") {
                     // Object with separate prompts
                     const promptValue = frontmatter.prompt[promptKey];
                     if (typeof promptValue === "string") {
-                        return promptValue;
+                        return { prompt: promptValue };
                     }
                 }
             }
@@ -232,20 +236,20 @@ export class JournalReflectPlugin extends Plugin {
             if (frontmatter["prompt-file"]) {
                 if (typeof frontmatter["prompt-file"] === "string") {
                     // Single prompt file for all commands
-                    const fileContent = await this.readPromptFromFile(
+                    const resolved = await this.readPromptFromFile(
                         frontmatter["prompt-file"],
                     );
-                    if (fileContent) {
-                        return fileContent;
+                    if (resolved) {
+                        return resolved;
                     }
                 } else if (typeof frontmatter["prompt-file"] === "object") {
                     // Object with separate prompt files
                     const promptFile = frontmatter["prompt-file"][promptKey];
                     if (typeof promptFile === "string") {
-                        const fileContent =
+                        const resolved =
                             await this.readPromptFromFile(promptFile);
-                        if (fileContent) {
-                            return fileContent;
+                        if (resolved) {
+                            return resolved;
                         }
                     }
                 }
@@ -256,7 +260,7 @@ export class JournalReflectPlugin extends Plugin {
         return this.getDefaultPrompt(promptKey);
     }
 
-    private async getDefaultPrompt(promptKey: string): Promise<string> {
+    private async getDefaultPrompt(promptKey: string): Promise<ResolvedPrompt> {
         const promptConfig = this.settings.prompts[promptKey];
         if (!promptConfig) {
             throw new Error(`Unknown prompt key: ${promptKey}`);
@@ -264,27 +268,37 @@ export class JournalReflectPlugin extends Plugin {
 
         // First, try to use the file specified in prompt config
         if (promptConfig.promptFile) {
-            const fileContent = await this.readPromptFromFile(
+            const resolved = await this.readPromptFromFile(
                 promptConfig.promptFile,
             );
             console.log("Using file prompt", promptConfig.promptFile);
-            if (fileContent) {
-                return fileContent;
+            if (resolved) {
+                return resolved;
             }
         }
 
         // Final fallback for legacy prompts
-        return DEFAULT_PROMPT;
+        return { prompt: DEFAULT_PROMPT };
     }
 
     private async readPromptFromFile(
         promptFilePath: string,
-    ): Promise<string | null> {
+    ): Promise<ResolvedPrompt | null> {
         const promptFile = this.app.vault.getAbstractFileByPath(promptFilePath);
         if (promptFile instanceof TFile) {
             try {
-                const promptContent = await this.app.vault.read(promptFile);
-                return promptContent.trim();
+                const promptContent =
+                    await this.app.vault.cachedRead(promptFile);
+                const frontmatter =
+                    this.app.metadataCache.getFileCache(promptFile)?.frontmatter;
+                const model =
+                    typeof frontmatter?.model === "string"
+                        ? frontmatter.model
+                        : undefined;
+
+                // Strip frontmatter from content
+                const promptText = this.stripFrontmatter(promptContent);
+                return { prompt: promptText, model };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
                 console.error("Error reading prompt file:", error);
@@ -294,6 +308,11 @@ export class JournalReflectPlugin extends Plugin {
             console.warn("Prompt file not found:", promptFilePath);
         }
         return null;
+    }
+
+    private stripFrontmatter(content: string): string {
+        const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
+        return content.replace(frontmatterRegex, "").trim();
     }
 
     private async expandLinkedFiles(
@@ -427,7 +446,7 @@ export class JournalReflectPlugin extends Plugin {
             (h) => h.heading === targetHeading,
         );
 
-        if (heading) {
+        if (heading && cache.headings) {
             // Find the end of this section
             const start = heading.position.end.offset;
             let end = fileContent.length;
@@ -450,7 +469,7 @@ export class JournalReflectPlugin extends Plugin {
 
     private async getGeneratedContent(
         documentText: string,
-        systemPrompt: string,
+        resolvedPrompt: ResolvedPrompt,
         promptKey: string,
     ): Promise<string | null> {
         if (!documentText.trim()) {
@@ -458,7 +477,9 @@ export class JournalReflectPlugin extends Plugin {
             return null;
         }
 
-        if (!this.settings.ollamaUrl || !this.settings.modelName) {
+        const model = resolvedPrompt.model || this.settings.modelName;
+
+        if (!this.settings.ollamaUrl || !model) {
             new Notice(
                 "Ollama URL or model not configured. Please check settings.",
             );
@@ -475,11 +496,11 @@ export class JournalReflectPlugin extends Plugin {
 
         const displayLabel =
             this.settings.prompts[promptKey]?.displayLabel || promptKey;
-        new Notice(`Generating ${displayLabel}...`);
+        new Notice(`Generating ${displayLabel} using ${model}`);
 
         return await this.ollamaClient.generate(
-            this.settings.modelName,
-            systemPrompt,
+            model,
+            resolvedPrompt.prompt,
             documentText,
         );
     }
