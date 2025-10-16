@@ -94,8 +94,8 @@ export function filterCallouts(content: string, calloutTypes: string): string {
 
             // Continue skipping if line starts with prefix and isn't a new callout
             if (
-                trimmedLine.startsWith(trimmedPrefix)
-                && !(trimmedLine.includes("[!") && depthMatch)
+                trimmedLine.startsWith(trimmedPrefix) &&
+                !(trimmedLine.includes("[!") && depthMatch)
             ) {
                 continue;
             }

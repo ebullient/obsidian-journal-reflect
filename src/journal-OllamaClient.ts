@@ -81,8 +81,7 @@ export class OllamaClient implements IOllamaClient {
 
             const data: GenerateResponse = response.json;
             return {
-                response:
-                    data.response !== undefined ? data.response.trim() : null,
+                response: data.response?.trim() ?? null,
                 context: data.context,
             };
         } catch (error) {

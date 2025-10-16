@@ -17,7 +17,8 @@ import {
     parseLinkReference,
 } from "./journal-Utils";
 
-const CONTEXT_TTL_MS = 30 * 60 * 1000;
+const CONTEXT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CONTEXT_REAP_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
 
 export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
@@ -206,7 +207,6 @@ export class JournalReflectPlugin extends Plugin {
         displayText?: string;
     }): boolean {
         const textToCheck = `[${linkCache.displayText}](${linkCache.link})`;
-        console.log("ShouldIncludeLink", textToCheck, this.excludeLinkPatterns);
         return this.excludeLinkPatterns.some((pattern) =>
             pattern.test(textToCheck),
         );
@@ -296,19 +296,35 @@ export class JournalReflectPlugin extends Plugin {
         return undefined;
     }
 
+    private parseParameterWithConstraint(
+        frontmatter: Record<string, unknown> | undefined,
+        keys: string[],
+        constraint: (val: number) => boolean,
+    ): number | undefined {
+        const candidate = this.parseFiniteNumber(
+            this.getFrontmatterValue(frontmatter, keys),
+        );
+        return candidate !== undefined && constraint(candidate)
+            ? candidate
+            : undefined;
+    }
+
     private buildContextKey(
         file: TFile,
         resolvedPrompt: ResolvedPrompt,
         promptKey: string,
     ): string | null {
-        if (!resolvedPrompt.isContinuous) {
+        if (resolvedPrompt.isContinuous !== true) {
             return null;
         }
         const promptSource = resolvedPrompt.sourcePath || promptKey;
         return `${file.path}::${promptSource}`;
     }
 
-    private getContextForKey(key: string): number[] | undefined {
+    private getContextForKey(key: string | null): number[] | undefined {
+        if (!key) {
+            return undefined;
+        }
         const entry = this.promptContexts.get(key);
         if (!entry) {
             return undefined;
@@ -342,11 +358,10 @@ export class JournalReflectPlugin extends Plugin {
     }
 
     private registerContextReaper(): void {
-        const reapIntervalMs = 3 * 60 * 60 * 1000;
         this.registerInterval(
             window.setInterval(
                 () => this.cullExpiredContexts(),
-                reapIntervalMs,
+                CONTEXT_REAP_INTERVAL_MS,
             ),
         );
     }
@@ -423,49 +438,26 @@ export class JournalReflectPlugin extends Plugin {
                         ? frontmatter.model
                         : undefined;
                 const numCtx = this.parsePositiveInteger(frontmatter?.num_ctx);
-                const temperatureCandidate = this.parseFiniteNumber(
-                    this.getFrontmatterValue(frontmatter, [
-                        "temperature",
-                        "temp",
-                    ]),
+                const temperature = this.parseParameterWithConstraint(
+                    frontmatter,
+                    ["temperature", "temp"],
+                    (val) => val >= 0,
                 );
-                let temperature: number | undefined;
-                if (
-                    temperatureCandidate !== undefined
-                    && temperatureCandidate >= 0
-                ) {
-                    temperature = temperatureCandidate;
-                }
-                const topPCandidate = this.parseFiniteNumber(
-                    this.getFrontmatterValue(frontmatter, [
-                        "top_p",
-                        "topP",
-                        "top-p",
-                    ]),
+                const topP = this.parseParameterWithConstraint(
+                    frontmatter,
+                    ["top_p", "topP", "top-p"],
+                    (val) => val > 0,
                 );
-                let topP: number | undefined;
-                if (topPCandidate !== undefined && topPCandidate > 0) {
-                    topP = topPCandidate;
-                }
-                const repeatPenaltyCandidate = this.parseFiniteNumber(
-                    this.getFrontmatterValue(frontmatter, [
-                        "repeat_penalty",
-                        "repeatPenalty",
-                        "repeat-penalty",
-                    ]),
+                const repeatPenalty = this.parseParameterWithConstraint(
+                    frontmatter,
+                    ["repeat_penalty", "repeatPenalty", "repeat-penalty"],
+                    (val) => val > 0,
                 );
-                let repeatPenalty: number | undefined;
-                if (
-                    repeatPenaltyCandidate !== undefined
-                    && repeatPenaltyCandidate > 0
-                ) {
-                    repeatPenalty = repeatPenaltyCandidate;
-                }
                 const rawContinuous =
-                    frontmatter?.isContinuous
-                    ?? frontmatter?.is_continuous
-                    ?? frontmatter?.["is-continuous"]
-                    ?? frontmatter?.continuous;
+                    frontmatter?.isContinuous ??
+                    frontmatter?.is_continuous ??
+                    frontmatter?.["is-continuous"] ??
+                    frontmatter?.continuous;
                 const isContinuous = this.parseBoolean(rawContinuous);
 
                 // Strip frontmatter from content
@@ -685,8 +677,7 @@ export class JournalReflectPlugin extends Plugin {
             resolvedPrompt,
             promptKey,
         );
-        const context =
-            contextKey !== null ? this.getContextForKey(contextKey) : undefined;
+        const context = this.getContextForKey(contextKey);
 
         const result = await this.ollamaClient.generate(
             model,
@@ -694,19 +685,15 @@ export class JournalReflectPlugin extends Plugin {
             documentText,
             {
                 numCtx: resolvedPrompt.numCtx,
-                context: context,
+                context,
                 temperature: resolvedPrompt.temperature,
                 topP: resolvedPrompt.topP,
                 repeatPenalty: resolvedPrompt.repeatPenalty,
             },
         );
 
-        if (contextKey !== null) {
-            if (result.context && result.context.length > 0) {
-                this.storeContextForKey(contextKey, result.context);
-            } else {
-                this.promptContexts.delete(contextKey);
-            }
+        if (contextKey !== null && result.context) {
+            this.storeContextForKey(contextKey, result.context);
         }
 
         return result.response;
