@@ -223,6 +223,26 @@ export class JournalReflectPlugin extends Plugin {
         return undefined;
     }
 
+    private parsePositiveInteger(value: unknown): number | undefined {
+        if (value === null || value === undefined) {
+            return undefined;
+        }
+
+        const parsed =
+            typeof value === "number"
+                ? value
+                : Number.parseInt(String(value).trim(), 10);
+
+        if (
+            Number.isFinite(parsed) &&
+            Number.isInteger(parsed) &&
+            parsed > 0
+        ) {
+            return parsed;
+        }
+        return undefined;
+    }
+
     private async resolvePromptFromFile(
         file: TFile,
         promptKey: string,
@@ -294,10 +314,11 @@ export class JournalReflectPlugin extends Plugin {
                     typeof frontmatter?.model === "string"
                         ? frontmatter.model
                         : undefined;
+                const numCtx = this.parsePositiveInteger(frontmatter?.num_ctx);
 
                 // Strip frontmatter from content
                 const promptText = this.stripFrontmatter(promptContent);
-                return { prompt: promptText, model };
+                return { prompt: promptText, model, numCtx };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
                 console.error("Error reading prompt file:", error);
@@ -501,6 +522,7 @@ export class JournalReflectPlugin extends Plugin {
             model,
             resolvedPrompt.prompt,
             documentText,
+            resolvedPrompt.numCtx,
         );
     }
 }

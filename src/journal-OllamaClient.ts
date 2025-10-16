@@ -10,6 +10,7 @@ export interface IOllamaClient {
         model: string,
         systemPrompt: string,
         documentText: string,
+        numCtx?: number,
     ): Promise<string | null>;
     checkConnection(): Promise<boolean>;
     listModels(): Promise<string[]>;
@@ -26,6 +27,7 @@ export class OllamaClient implements IOllamaClient {
         model: string,
         systemPrompt: string,
         documentText: string,
+        numCtx?: number,
     ): Promise<string | null> {
         try {
             const generateRequest: GenerateRequest = {
@@ -34,6 +36,12 @@ export class OllamaClient implements IOllamaClient {
                 system: systemPrompt,
                 stream: false,
             };
+
+            if (typeof numCtx === "number") {
+                generateRequest.options = {
+                    num_ctx: numCtx,
+                };
+            }
 
             const response = await requestUrl({
                 url: `${this.baseUrl}/api/generate`,

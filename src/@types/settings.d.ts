@@ -8,6 +8,7 @@ export interface PromptConfig {
 export interface ResolvedPrompt {
     prompt: string;
     model?: string;
+    numCtx?: number;
 }
 
 export interface JournalReflectSettings {

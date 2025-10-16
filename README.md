@@ -70,6 +70,19 @@ prompt-file: "prompts/creative-writing-coach.md"
 ---
 ```
 
+Prompt files can include their own frontmatter to override model settings. Add
+`model` and/or `num_ctx` to the prompt file to tailor Ollama requests for that
+prompt:
+
+```markdown
+---
+model: llama3.1
+num_ctx: 4096
+---
+You are a reflective companion. Ask concise questions that help summarize the
+day.
+```
+
 ## Privacy & Security
 
 This plugin only communicates with your local Ollama instance. No data is sent to external services.
