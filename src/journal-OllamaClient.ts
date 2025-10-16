@@ -10,10 +10,20 @@ export interface IOllamaClient {
         model: string,
         systemPrompt: string,
         documentText: string,
-        numCtx?: number,
-    ): Promise<string | null>;
+        options?: GenerateOptions,
+    ): Promise<GenerateResult>;
     checkConnection(): Promise<boolean>;
     listModels(): Promise<string[]>;
+}
+
+export interface GenerateOptions {
+    numCtx?: number;
+    context?: number[];
+}
+
+export interface GenerateResult {
+    response: string | null;
+    context?: number[];
 }
 
 export class OllamaClient implements IOllamaClient {
@@ -27,8 +37,8 @@ export class OllamaClient implements IOllamaClient {
         model: string,
         systemPrompt: string,
         documentText: string,
-        numCtx?: number,
-    ): Promise<string | null> {
+        options?: GenerateOptions,
+    ): Promise<GenerateResult> {
         try {
             const generateRequest: GenerateRequest = {
                 model: model,
@@ -37,10 +47,13 @@ export class OllamaClient implements IOllamaClient {
                 stream: false,
             };
 
-            if (typeof numCtx === "number") {
+            if (options?.numCtx !== undefined) {
                 generateRequest.options = {
-                    num_ctx: numCtx,
+                    num_ctx: options.numCtx,
                 };
+            }
+            if (options?.context && options.context.length > 0) {
+                generateRequest.context = options.context;
             }
 
             const response = await requestUrl({
@@ -51,13 +64,17 @@ export class OllamaClient implements IOllamaClient {
             });
 
             const data: GenerateResponse = response.json;
-            return data.response !== undefined ? data.response.trim() : null;
+            return {
+                response:
+                    data.response !== undefined ? data.response.trim() : null,
+                context: data.context,
+            };
         } catch (error) {
             console.error("Error calling Ollama API: ", error);
             const errorMsg =
                 error instanceof Error ? error.message : String(error);
             new Notice(`Ollama API error: ${errorMsg}`);
-            return null;
+            return { response: null };
         }
     }
 

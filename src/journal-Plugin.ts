@@ -17,11 +17,17 @@ import {
     parseLinkReference,
 } from "./journal-Utils";
 
+const CONTEXT_TTL_MS = 30 * 60 * 1000;
+
 export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
     ollamaClient!: OllamaClient;
     private commandIds: string[] = [];
     private excludeLinkPatterns: RegExp[] = [];
+    private promptContexts = new Map<
+        string,
+        { context: number[]; timestamp: number }
+    >();
 
     async onload() {
         console.log("Loading Journal Reflect Plugin");
@@ -34,6 +40,7 @@ export class JournalReflectPlugin extends Plugin {
         this.app.workspace.onLayoutReady(() => {
             this.updateOllamaClient();
             this.generateCommands();
+            this.registerContextReaper();
         });
     }
 
@@ -123,14 +130,14 @@ export class JournalReflectPlugin extends Plugin {
     ) {
         const docContent = editor.getValue();
 
-        const file = ctx.file;
-        if (!file) {
+        const activeNote = ctx.file;
+        if (!activeNote) {
             new Notice("No file context available.");
             return;
         }
 
         const expandedDocContent = await this.expandLinkedFiles(
-            file,
+            activeNote,
             docContent,
         );
 
@@ -140,11 +147,15 @@ export class JournalReflectPlugin extends Plugin {
             promptConfig?.excludeCalloutTypes || "",
         );
 
-        const resolved = await this.resolvePromptFromFile(file, promptKey);
+        const resolved = await this.resolvePromptFromFile(
+            activeNote,
+            promptKey,
+        );
         const content = await this.getGeneratedContent(
             filteredDocContent,
             resolved,
             promptKey,
+            activeNote,
         );
 
         if (content) {
@@ -233,14 +244,84 @@ export class JournalReflectPlugin extends Plugin {
                 ? value
                 : Number.parseInt(String(value).trim(), 10);
 
-        if (
-            Number.isFinite(parsed) &&
-            Number.isInteger(parsed) &&
-            parsed > 0
-        ) {
+        if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0) {
             return parsed;
         }
         return undefined;
+    }
+
+    private parseBoolean(value: unknown): boolean | undefined {
+        if (value === null || value === undefined) {
+            return undefined;
+        }
+        if (typeof value === "boolean") {
+            return value;
+        }
+        if (typeof value === "string") {
+            const normalized = value.trim().toLowerCase();
+            if (normalized === "true") {
+                return true;
+            }
+            if (normalized === "false") {
+                return false;
+            }
+        }
+        return undefined;
+    }
+
+    private buildContextKey(
+        file: TFile,
+        resolvedPrompt: ResolvedPrompt,
+        promptKey: string,
+    ): string | null {
+        if (!resolvedPrompt.isContinuous) {
+            return null;
+        }
+        const promptSource = resolvedPrompt.sourcePath || promptKey;
+        return `${file.path}::${promptSource}`;
+    }
+
+    private getContextForKey(key: string): number[] | undefined {
+        const entry = this.promptContexts.get(key);
+        if (!entry) {
+            return undefined;
+        }
+        if (Date.now() - entry.timestamp > CONTEXT_TTL_MS) {
+            this.promptContexts.delete(key);
+            return undefined;
+        }
+        return entry.context;
+    }
+
+    private storeContextForKey(key: string, context: number[]): void {
+        if (context.length === 0) {
+            this.promptContexts.delete(key);
+            return;
+        }
+        this.promptContexts.set(key, { context, timestamp: Date.now() });
+        this.cullExpiredContexts();
+    }
+
+    private cullExpiredContexts(): void {
+        if (this.promptContexts.size === 0) {
+            return;
+        }
+        const now = Date.now();
+        for (const [key, value] of this.promptContexts.entries()) {
+            if (now - value.timestamp > CONTEXT_TTL_MS) {
+                this.promptContexts.delete(key);
+            }
+        }
+    }
+
+    private registerContextReaper(): void {
+        const reapIntervalMs = 3 * 60 * 60 * 1000;
+        this.registerInterval(
+            window.setInterval(
+                () => this.cullExpiredContexts(),
+                reapIntervalMs,
+            ),
+        );
     }
 
     private async resolvePromptFromFile(
@@ -315,10 +396,22 @@ export class JournalReflectPlugin extends Plugin {
                         ? frontmatter.model
                         : undefined;
                 const numCtx = this.parsePositiveInteger(frontmatter?.num_ctx);
+                const rawContinuous =
+                    frontmatter?.isContinuous
+                    ?? frontmatter?.is_continuous
+                    ?? frontmatter?.["is-continuous"]
+                    ?? frontmatter?.continuous;
+                const isContinuous = this.parseBoolean(rawContinuous);
 
                 // Strip frontmatter from content
                 const promptText = this.stripFrontmatter(promptContent);
-                return { prompt: promptText, model, numCtx };
+                return {
+                    prompt: promptText,
+                    model,
+                    numCtx,
+                    isContinuous,
+                    sourcePath: promptFilePath,
+                };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
                 console.error("Error reading prompt file:", error);
@@ -491,6 +584,7 @@ export class JournalReflectPlugin extends Plugin {
         documentText: string,
         resolvedPrompt: ResolvedPrompt,
         promptKey: string,
+        activeNote: TFile,
     ): Promise<string | null> {
         if (!documentText.trim()) {
             new Notice("Document is empty. Write something first!");
@@ -518,11 +612,32 @@ export class JournalReflectPlugin extends Plugin {
             this.settings.prompts[promptKey]?.displayLabel || promptKey;
         new Notice(`Generating ${displayLabel} using ${model}`);
 
-        return await this.ollamaClient.generate(
+        const contextKey = this.buildContextKey(
+            activeNote,
+            resolvedPrompt,
+            promptKey,
+        );
+        const context =
+            contextKey !== null ? this.getContextForKey(contextKey) : undefined;
+
+        const result = await this.ollamaClient.generate(
             model,
             resolvedPrompt.prompt,
             documentText,
-            resolvedPrompt.numCtx,
+            {
+                numCtx: resolvedPrompt.numCtx,
+                context: context,
+            },
         );
+
+        if (contextKey !== null) {
+            if (result.context && result.context.length > 0) {
+                this.storeContextForKey(contextKey, result.context);
+            } else {
+                this.promptContexts.delete(contextKey);
+            }
+        }
+
+        return result.response;
     }
 }

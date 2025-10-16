@@ -9,6 +9,8 @@ export interface ResolvedPrompt {
     prompt: string;
     model?: string;
     numCtx?: number;
+    isContinuous?: boolean;
+    sourcePath?: string;
 }
 
 export interface JournalReflectSettings {

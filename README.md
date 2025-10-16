@@ -71,17 +71,23 @@ prompt-file: "prompts/creative-writing-coach.md"
 ```
 
 Prompt files can include their own frontmatter to override model settings. Add
-`model` and/or `num_ctx` to the prompt file to tailor Ollama requests for that
+`model`, `num_ctx`, and `isContinuous` to the prompt file to tailor Ollama requests
+for that
 prompt:
 
 ```markdown
 ---
 model: llama3.1
 num_ctx: 4096
+isContinuous: true
 ---
 You are a reflective companion. Ask concise questions that help summarize the
 day.
 ```
+
+When `isContinuous` is `true`, the plugin keeps a private Ollama conversation
+context for each prompt/note combination so follow-up questions build on the
+previous exchange. Context is automatically refreshed after a short idle period.
 
 ## Privacy & Security
 
