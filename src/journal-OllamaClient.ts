@@ -19,6 +19,9 @@ export interface IOllamaClient {
 export interface GenerateOptions {
     numCtx?: number;
     context?: number[];
+    temperature?: number;
+    topP?: number;
+    repeatPenalty?: number;
 }
 
 export interface GenerateResult {
@@ -47,11 +50,24 @@ export class OllamaClient implements IOllamaClient {
                 stream: false,
             };
 
+            const requestOptions: NonNullable<GenerateRequest["options"]> = {};
+
             if (options?.numCtx !== undefined) {
-                generateRequest.options = {
-                    num_ctx: options.numCtx,
-                };
+                requestOptions.num_ctx = options.numCtx;
             }
+            if (options?.temperature !== undefined) {
+                requestOptions.temperature = options.temperature;
+            }
+            if (options?.topP !== undefined) {
+                requestOptions.top_p = options.topP;
+            }
+            if (options?.repeatPenalty !== undefined) {
+                requestOptions.repeat_penalty = options.repeatPenalty;
+            }
+            if (Object.keys(requestOptions).length > 0) {
+                generateRequest.options = requestOptions;
+            }
+
             if (options?.context && options.context.length > 0) {
                 generateRequest.context = options.context;
             }

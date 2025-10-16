@@ -234,7 +234,22 @@ export class JournalReflectPlugin extends Plugin {
         return undefined;
     }
 
-    private parsePositiveInteger(value: unknown): number | undefined {
+    private getFrontmatterValue(
+        frontmatter: Record<string, unknown> | undefined,
+        keys: string[],
+    ): unknown {
+        if (!frontmatter) {
+            return undefined;
+        }
+        for (const key of keys) {
+            if (frontmatter[key] !== undefined) {
+                return frontmatter[key];
+            }
+        }
+        return undefined;
+    }
+
+    private parseFiniteNumber(value: unknown): number | undefined {
         if (value === null || value === undefined) {
             return undefined;
         }
@@ -242,9 +257,21 @@ export class JournalReflectPlugin extends Plugin {
         const parsed =
             typeof value === "number"
                 ? value
-                : Number.parseInt(String(value).trim(), 10);
+                : Number.parseFloat(String(value).trim());
 
-        if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0) {
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+        return undefined;
+    }
+
+    private parsePositiveInteger(value: unknown): number | undefined {
+        const parsed = this.parseFiniteNumber(value);
+
+        if (parsed === undefined) {
+            return undefined;
+        }
+        if (Number.isInteger(parsed) && parsed > 0) {
             return parsed;
         }
         return undefined;
@@ -396,6 +423,44 @@ export class JournalReflectPlugin extends Plugin {
                         ? frontmatter.model
                         : undefined;
                 const numCtx = this.parsePositiveInteger(frontmatter?.num_ctx);
+                const temperatureCandidate = this.parseFiniteNumber(
+                    this.getFrontmatterValue(frontmatter, [
+                        "temperature",
+                        "temp",
+                    ]),
+                );
+                let temperature: number | undefined;
+                if (
+                    temperatureCandidate !== undefined
+                    && temperatureCandidate >= 0
+                ) {
+                    temperature = temperatureCandidate;
+                }
+                const topPCandidate = this.parseFiniteNumber(
+                    this.getFrontmatterValue(frontmatter, [
+                        "top_p",
+                        "topP",
+                        "top-p",
+                    ]),
+                );
+                let topP: number | undefined;
+                if (topPCandidate !== undefined && topPCandidate > 0) {
+                    topP = topPCandidate;
+                }
+                const repeatPenaltyCandidate = this.parseFiniteNumber(
+                    this.getFrontmatterValue(frontmatter, [
+                        "repeat_penalty",
+                        "repeatPenalty",
+                        "repeat-penalty",
+                    ]),
+                );
+                let repeatPenalty: number | undefined;
+                if (
+                    repeatPenaltyCandidate !== undefined
+                    && repeatPenaltyCandidate > 0
+                ) {
+                    repeatPenalty = repeatPenaltyCandidate;
+                }
                 const rawContinuous =
                     frontmatter?.isContinuous
                     ?? frontmatter?.is_continuous
@@ -411,6 +476,9 @@ export class JournalReflectPlugin extends Plugin {
                     numCtx,
                     isContinuous,
                     sourcePath: promptFilePath,
+                    temperature,
+                    topP,
+                    repeatPenalty,
                 };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
@@ -627,6 +695,9 @@ export class JournalReflectPlugin extends Plugin {
             {
                 numCtx: resolvedPrompt.numCtx,
                 context: context,
+                temperature: resolvedPrompt.temperature,
+                topP: resolvedPrompt.topP,
+                repeatPenalty: resolvedPrompt.repeatPenalty,
             },
         );
 

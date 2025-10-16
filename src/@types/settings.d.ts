@@ -11,6 +11,9 @@ export interface ResolvedPrompt {
     numCtx?: number;
     isContinuous?: boolean;
     sourcePath?: string;
+    temperature?: number;
+    topP?: number;
+    repeatPenalty?: number;
 }
 
 export interface JournalReflectSettings {
