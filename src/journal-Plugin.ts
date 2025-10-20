@@ -521,23 +521,29 @@ export class JournalReflectPlugin extends Plugin {
             ...(fileCache.embeds || []),
         ];
 
-        for (const linkCache of allLinks) {
+        for (const cachedLink of allLinks) {
             // Skip if display text matches exclusion pattern
-            if (this.shouldExcludeLink(linkCache)) {
+            if (this.shouldExcludeLink(cachedLink)) {
                 console.log(
-                    `Skipping excluded link: ${linkCache.displayText || linkCache.link}`,
+                    "Skipping excluded link:",
+                    cachedLink.displayText || cachedLink.link,
                 );
                 continue;
             }
+            console.log(sourceFile.path, cachedLink.link);
 
             // Skip if we've already processed this link target
-            if (processedLinks.has(linkCache.link)) {
+            if (processedLinks.has(cachedLink.link)) {
+                console.log(
+                    "Skipping visited link:",
+                    cachedLink.displayText || cachedLink.link,
+                );
                 continue;
             }
-            processedLinks.add(linkCache.link);
+            processedLinks.add(cachedLink.link);
 
             // Parse link to extract path and subpath (heading/block reference)
-            const { path, subpath } = parseLinkReference(linkCache.link);
+            const { path, subpath } = parseLinkReference(cachedLink.link);
 
             const targetFile = this.app.metadataCache.getFirstLinkpathDest(
                 path,
@@ -547,9 +553,7 @@ export class JournalReflectPlugin extends Plugin {
             if (targetFile) {
                 // Skip if we've already processed this file (circular reference)
                 if (processedFiles.has(targetFile.path)) {
-                    console.log(
-                        `Skipping circular reference: ${targetFile.path}`,
-                    );
+                    console.log("Skipping circular reference", targetFile.path);
                     continue;
                 }
 
@@ -573,7 +577,7 @@ export class JournalReflectPlugin extends Plugin {
                     );
 
                     // Format as blockquote callout
-                    const linkDisplay = linkCache.link;
+                    const linkDisplay = cachedLink.link;
                     const quotedContent = formatAsEmbedBlockquote(
                         fullyExpandedContent,
                         linkDisplay,
@@ -582,7 +586,8 @@ export class JournalReflectPlugin extends Plugin {
                     expandedContent += `\n\n${quotedContent}`;
                 } catch (error) {
                     console.warn(
-                        `Could not read linked file: ${linkCache.link}`,
+                        "Could not read linked file:",
+                        cachedLink.link,
                         error,
                     );
                 }

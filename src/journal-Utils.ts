@@ -48,13 +48,14 @@ export function formatAsEmbedBlockquote(
     content: string,
     linkTarget: string,
     depth: number,
+    calloutType = "journal",
 ): string {
     const prefix = ">".repeat(depth + 1);
     const lines = content
         .split("\n")
         .map((line) => `${prefix} ${line}`)
         .join("\n");
-    const calloutHeader = `${prefix} [!quote] ${linkTarget}`;
+    const calloutHeader = `${prefix} [!${calloutType}] ${linkTarget}`;
     return `${calloutHeader}\n${lines}`;
 }
 
