@@ -103,9 +103,9 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             .addTextArea((text) =>
                 text
                     .setPlaceholder("^Reflect on\nTODO:\n\\[template\\]")
-                    .setValue(this.newSettings.excludeLinkPatterns)
+                    .setValue(this.newSettings.excludePatterns)
                     .onChange((value) => {
-                        this.newSettings.excludeLinkPatterns = value;
+                        this.newSettings.excludePatterns = value;
                     }),
             )
             .then((setting) => {

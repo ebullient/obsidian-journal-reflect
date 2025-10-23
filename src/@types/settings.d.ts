@@ -10,6 +10,8 @@ export interface ResolvedPrompt {
     model?: string;
     numCtx?: number;
     isContinuous?: boolean;
+    includeLinks?: boolean;
+    excludePatterns?: RegExp[];
     sourcePath?: string;
     temperature?: number;
     topP?: number;
@@ -19,6 +21,7 @@ export interface ResolvedPrompt {
 export interface JournalReflectSettings {
     ollamaUrl: string;
     modelName: string;
-    excludeLinkPatterns: string;
     prompts: Record<string, PromptConfig>;
+    excludePatterns: string;
+    excludeLinkPatterns?: string;
 }

@@ -24,7 +24,7 @@ export class JournalReflectPlugin extends Plugin {
     settings!: JournalReflectSettings;
     ollamaClient!: OllamaClient;
     private commandIds: string[] = [];
-    private excludeLinkPatterns: RegExp[] = [];
+    private excludePatterns: RegExp[] = [];
     private promptContexts = new Map<
         string,
         { context: number[]; timestamp: number }
@@ -99,13 +99,21 @@ export class JournalReflectPlugin extends Plugin {
         if (this.ollamaClient) {
             this.updateOllamaClient();
         }
-        this.compileExcludePatterns();
+        this.excludePatterns = this.compileExcludePatterns(
+            this.settings.excludePatterns || this.settings.excludeLinkPatterns,
+        );
     }
 
     async saveSettings() {
+        if (this.settings.excludeLinkPatterns) {
+            this.settings.excludePatterns = this.settings.excludeLinkPatterns;
+            delete this.settings.excludeLinkPatterns;
+        }
         await this.saveData(this.settings);
         this.updateOllamaClient();
-        this.compileExcludePatterns();
+        this.excludePatterns = this.compileExcludePatterns(
+            this.settings.excludePatterns,
+        );
         this.generateCommands();
     }
 
@@ -137,20 +145,21 @@ export class JournalReflectPlugin extends Plugin {
             return;
         }
 
+        const resolved = await this.resolvePromptFromFile(
+            activeNote,
+            promptKey,
+        );
         const expandedDocContent = await this.expandLinkedFiles(
             activeNote,
             docContent,
+            resolved.includeLinks ?? false,
+            resolved.excludePatterns,
         );
 
         const promptConfig = this.settings.prompts[promptKey];
         const filteredDocContent = filterCallouts(
             expandedDocContent,
             promptConfig?.excludeCalloutTypes || "",
-        );
-
-        const resolved = await this.resolvePromptFromFile(
-            activeNote,
-            promptKey,
         );
         const content = await this.getGeneratedContent(
             filteredDocContent,
@@ -186,30 +195,46 @@ export class JournalReflectPlugin extends Plugin {
         new Notice(`Inserted ${displayLabel}`);
     }
 
-    private compileExcludePatterns(): void {
-        this.excludeLinkPatterns = [];
-        const patterns = this.settings.excludeLinkPatterns
-            .split("\n")
-            .map((p) => p.trim())
-            .filter((p) => p.length > 0);
+    private compileExcludePatterns(
+        excludePatternsRaw?: string | string[] | undefined,
+    ): RegExp[] {
+        if (!excludePatternsRaw) {
+            return [];
+        }
+        const compiled: RegExp[] = [];
 
-        for (const pattern of patterns) {
+        let excludePatterns = excludePatternsRaw;
+        if (!Array.isArray(excludePatternsRaw)) {
+            excludePatterns = excludePatternsRaw
+                .split("\n")
+                .map((p) => p.trim())
+                .filter((p) => p.length > 0);
+        }
+        for (const pattern of excludePatterns) {
             try {
-                this.excludeLinkPatterns.push(new RegExp(pattern));
+                compiled.push(new RegExp(pattern));
             } catch (error) {
-                console.warn(`Invalid exclude link pattern: ${pattern}`, error);
+                console.warn(`Invalid exclude pattern: ${pattern}`, error);
             }
         }
+        return compiled;
     }
 
-    private shouldExcludeLink(linkCache: {
-        link: string;
-        displayText?: string;
-    }): boolean {
+    private shouldExcludeLink(
+        linkCache: {
+            link: string;
+            displayText?: string;
+        },
+        additionalPatterns: RegExp[] = [],
+    ): boolean {
+        // Check global exclude patterns (match against display text format)
         const textToCheck = `[${linkCache.displayText}](${linkCache.link})`;
-        return this.excludeLinkPatterns.some((pattern) =>
-            pattern.test(textToCheck),
-        );
+        const allPatterns = [
+            ...this.excludePatterns,
+            ...additionalPatterns,
+        ].filter(Boolean);
+
+        return allPatterns.some((pattern) => pattern.test(textToCheck));
     }
 
     private extractFrontmatterValue(
@@ -459,6 +484,17 @@ export class JournalReflectPlugin extends Plugin {
                     frontmatter?.["is-continuous"] ??
                     frontmatter?.continuous;
                 const isContinuous = this.parseBoolean(rawContinuous);
+                const rawIncludeLinks =
+                    frontmatter?.includeLinks ??
+                    frontmatter?.include_links ??
+                    frontmatter?.["include-links"];
+                const includeLinks = this.parseBoolean(rawIncludeLinks);
+                const excludePatternsRaw =
+                    frontmatter?.excludePatterns ??
+                    frontmatter?.exclude_patterns ??
+                    frontmatter?.["exclude-patterns"];
+                const excludePatterns =
+                    this.compileExcludePatterns(excludePatternsRaw);
 
                 // Strip frontmatter from content
                 const promptText = this.stripFrontmatter(promptContent);
@@ -467,6 +503,8 @@ export class JournalReflectPlugin extends Plugin {
                     model,
                     numCtx,
                     isContinuous,
+                    includeLinks,
+                    excludePatterns,
                     sourcePath: promptFilePath,
                     temperature,
                     topP,
@@ -491,6 +529,8 @@ export class JournalReflectPlugin extends Plugin {
     private async expandLinkedFiles(
         sourceFile: TFile | null,
         content: string,
+        includeLinks = false,
+        pathPatterns: RegExp[] = [],
         depth = 0,
         processedFiles = new Set<string>(),
     ): Promise<string> {
@@ -516,28 +556,23 @@ export class JournalReflectPlugin extends Plugin {
         const processedLinks = new Set<string>();
 
         // Process both links and embeds (fileCache already filters out external URLs)
+        // Only include regular links if includeLinks is true; always include embeds
         const allLinks = [
-            ...(fileCache.links || []),
+            ...(includeLinks ? fileCache.links || [] : []),
             ...(fileCache.embeds || []),
-        ];
+        ].filter((link) => link);
 
         for (const cachedLink of allLinks) {
-            // Skip if display text matches exclusion pattern
-            if (this.shouldExcludeLink(cachedLink)) {
-                console.log(
-                    "Skipping excluded link:",
-                    cachedLink.displayText || cachedLink.link,
-                );
+            // Skip if link matches exclusion patterns (global or prompt-specific)
+            if (this.shouldExcludeLink(cachedLink, pathPatterns)) {
+                console.log("Skipping excluded link:", cachedLink.link);
                 continue;
             }
             console.log(sourceFile.path, cachedLink.link);
 
             // Skip if we've already processed this link target
             if (processedLinks.has(cachedLink.link)) {
-                console.log(
-                    "Skipping visited link:",
-                    cachedLink.displayText || cachedLink.link,
-                );
+                console.log("Skipping visited link:", cachedLink.link);
                 continue;
             }
             processedLinks.add(cachedLink.link);
@@ -572,6 +607,8 @@ export class JournalReflectPlugin extends Plugin {
                     const fullyExpandedContent = await this.expandLinkedFiles(
                         targetFile,
                         extractedContent,
+                        includeLinks,
+                        pathPatterns,
                         depth + 1,
                         processedFiles,
                     );

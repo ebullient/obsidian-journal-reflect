@@ -72,6 +72,7 @@ export class OllamaClient implements IOllamaClient {
                 generateRequest.context = options.context;
             }
 
+            console.log("Send request to", this.baseUrl);
             const response = await requestUrl({
                 url: `${this.baseUrl}/api/generate`,
                 method: "POST",

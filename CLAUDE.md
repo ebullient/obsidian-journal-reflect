@@ -53,13 +53,13 @@ You are a senior development peer working alongside a Senior Software Engineer (
 - **Method chaining**: Break at dots for readability, even for single chains. This keeps lines under 80 chars and prevents Biome from wrapping unpredictably.
   ```typescript
   // GOOD - break at dots
-  const patterns = this.settings.excludeLinkPatterns
+  const patterns = this.settings.excludePatterns
       .split("\n")
       .map((p) => p.trim())
       .filter((p) => p.length > 0);
 
   // BAD - all on one line
-  const patterns = this.settings.excludeLinkPatterns.split("\n").map((p) => p.trim());
+  const patterns = this.settings.excludePatterns.split("\n").map((p) => p.trim());
 
   // GOOD - even single chains if they approach 80 chars
   const models = data.models

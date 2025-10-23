@@ -9,7 +9,7 @@ Keep your response concise and thought-provoking.`;
 export const DEFAULT_SETTINGS: JournalReflectSettings = {
     ollamaUrl: "http://localhost:11434",
     modelName: "llama3.1",
-    excludeLinkPatterns: "",
+    excludePatterns: "",
     prompts: {
         reflection: {
             displayLabel: "reflection question",
