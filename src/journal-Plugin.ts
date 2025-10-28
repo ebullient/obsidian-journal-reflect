@@ -1,4 +1,5 @@
 import {
+    debounce,
     type Editor,
     type MarkdownFileInfo,
     MarkdownView,
@@ -31,8 +32,6 @@ export class JournalReflectPlugin extends Plugin {
     >();
 
     async onload() {
-        console.log("Loading Journal Reflect Plugin");
-
         await this.loadSettings();
 
         this.addSettingTab(new JournalReflectSettingsTab(this.app, this));
@@ -43,7 +42,23 @@ export class JournalReflectPlugin extends Plugin {
             this.generateCommands();
             this.registerContextReaper();
         });
+        console.log("Journal Reflect: loaded");
     }
+
+    onunload() {
+        console.log("Journal Reflect: unloaded");
+    }
+
+    onExternalSettingsChange = debounce(
+        async () => {
+            const incoming = await this.loadData();
+            console.debug("Journal Reflect: settings changed", incoming);
+            this.settings = Object.assign({}, this.settings, incoming);
+            await this.saveSettings();
+        },
+        2000,
+        true,
+    );
 
     private updateOllamaClient(): void {
         this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
@@ -84,10 +99,6 @@ export class JournalReflectPlugin extends Plugin {
 
             this.commandIds.push(commandId);
         }
-    }
-
-    onunload() {
-        console.log("Unloading Journal Reflect Plugin");
     }
 
     async loadSettings() {
