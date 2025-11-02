@@ -4,6 +4,7 @@
 
 # VS Code
 .vscode
+settings.local.json
 
 # npm
 node_modules
@@ -16,4 +17,3 @@ build
 data.json
 references
 *.out
-.claude/settings.local.json
