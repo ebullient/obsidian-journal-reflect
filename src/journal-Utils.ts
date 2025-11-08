@@ -48,7 +48,7 @@ export function formatAsEmbedBlockquote(
     content: string,
     linkTarget: string,
     depth: number,
-    calloutType = "journal",
+    calloutType = "embedded-note",
 ): string {
     const prefix = ">".repeat(depth + 1);
     const lines = content
