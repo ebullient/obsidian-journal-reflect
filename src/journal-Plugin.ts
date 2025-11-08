@@ -17,6 +17,7 @@ import {
     formatAsEmbedBlockquote,
     parseLinkReference,
 } from "./journal-Utils";
+import "./window-type";
 
 const CONTEXT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const CONTEXT_REAP_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
@@ -35,6 +36,10 @@ export class JournalReflectPlugin extends Plugin {
         await this.loadSettings();
 
         this.addSettingTab(new JournalReflectSettingsTab(this.app, this));
+
+        // Initialize window.journal.filters for external scripts
+        window.journal = window.journal ?? {};
+        window.journal.filters = window.journal.filters ?? {};
 
         // Defer initialization until layout is ready
         this.app.workspace.onLayoutReady(() => {
@@ -172,8 +177,13 @@ export class JournalReflectPlugin extends Plugin {
             expandedDocContent,
             promptConfig?.excludeCalloutTypes || "",
         );
-        const content = await this.getGeneratedContent(
+        const processedContent = this.applyPrefilters(
             filteredDocContent,
+            resolved.filters,
+        );
+
+        const content = await this.getGeneratedContent(
+            processedContent,
             resolved,
             promptKey,
             activeNote,
@@ -506,6 +516,9 @@ export class JournalReflectPlugin extends Plugin {
                     frontmatter?.["exclude-patterns"];
                 const excludePatterns =
                     this.compileExcludePatterns(excludePatternsRaw);
+                const filters = Array.isArray(frontmatter?.filters)
+                    ? frontmatter.filters
+                    : undefined;
 
                 // Strip frontmatter from content
                 const promptText = this.stripFrontmatter(promptContent);
@@ -520,6 +533,7 @@ export class JournalReflectPlugin extends Plugin {
                     temperature,
                     topP,
                     repeatPenalty,
+                    filters,
                 };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
@@ -691,6 +705,35 @@ export class JournalReflectPlugin extends Plugin {
 
         // If no matching subpath found, return full content
         return fileContent;
+    }
+
+    private applyPrefilters(content: string, filterNames?: string[]): string {
+        if (!filterNames || filterNames.length === 0) {
+            return content;
+        }
+
+        let processedContent = content;
+
+        for (const filterName of filterNames) {
+            const filterFn = window.journal?.filters?.[filterName];
+            if (!filterFn) {
+                console.warn(
+                    `Filter "${filterName}" not found in window.journal.filters`,
+                );
+                continue;
+            }
+
+            try {
+                processedContent = filterFn(processedContent);
+            } catch (error) {
+                console.error(`Error applying filter "${filterName}":`, error);
+                // Continue with original content on error
+                return content;
+            }
+        }
+
+        console.debug("Prefiltered content", processedContent);
+        return processedContent;
     }
 
     private async getGeneratedContent(

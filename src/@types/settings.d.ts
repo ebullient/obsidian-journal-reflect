@@ -16,6 +16,7 @@ export interface ResolvedPrompt {
     temperature?: number;
     topP?: number;
     repeatPenalty?: number;
+    filters?: string[];
 }
 
 export interface JournalReflectSettings {

@@ -17,6 +17,7 @@ An Obsidian plugin that uses local AI (Ollama) to generate thoughtful reflection
 ## Plugin installation
 
 1. Build the plugin
+
     ```console
     npm install
     npm run build
@@ -44,19 +45,23 @@ Access settings through Obsidian's plugin settings:
 ## Usage
 
 Use the command palette to access:
+
 - **Generate reflection question** - Adds a question at your cursor position
 
 Responses appear as blockquotes (>) in your journal. Position your cursor where you want the reflection to appear.
 
 ### Frontmatter Override
+
 You can override the system prompt on a per-document basis using frontmatter.
 
 **Prompt Resolution Priority:**
+
 1. `prompt` in frontmatter (highest priority)
 2. `prompt-file` in frontmatter
 3. Prompt defined in plugin configuration (fallback)
 
 #### Option 1: Direct prompt in frontmatter
+
 ```yaml
 ---
 prompt: "You are a creative writing coach. Generate questions that help explore character motivations and plot development."
@@ -64,6 +69,7 @@ prompt: "You are a creative writing coach. Generate questions that help explore 
 ```
 
 #### Option 2: Reference a prompt file
+
 ```yaml
 ---
 prompt-file: "prompts/creative-writing-coach.md"
@@ -93,10 +99,70 @@ previous exchange. Context is automatically refreshed after a short idle period.
 Other frontmatter keys are ignored unless explicitly supported, which helps
 avoid unintentionally pushing plugin-specific metadata to Ollama.
 
+### Pre-Filter API
+
+The plugin provides a global API for registering content filters that process
+text before it is sent to Ollama. This allows external scripts (e.g., via
+CustomJS or other plugins) to modify content programmatically.
+
+#### Registering a Filter
+
+Filters are registered via `window.journal.filters`, which is a plain object
+mapping filter names to filter functions. The plugin creates this object if it
+doesn't exist, so external scripts can register filters before or after the
+plugin loads.
+
+**Example registration:**
+
+```javascript
+// In a CustomJS script or another plugin
+window.journal = window.journal || {};
+window.journal.filters = window.journal.filters || {};
+
+window.journal.filters.redactSecrets = (content) => {
+    // Replace sensitive patterns
+    return content.replace(/password:\s*\S+/gi, "password: ***");
+};
+
+window.journal.filters.removeEmojis = (content) => {
+    // Strip emoji characters
+    return content.replace(/[\u{1F600}-\u{1F64F}]/gu, "");
+};
+```
+
+#### Using Filters in Prompt Files
+
+Specify which filters to apply in the prompt file frontmatter using the
+`filters` array. Filters are applied sequentially in the order specified.
+
+```markdown
+---
+model: llama3.1
+filters: ["redactSecrets", "removeEmojis"]
+---
+You are a thoughtful coach. Generate a reflection question.
+```
+
+#### Filter Function Signature
+
+Filters must be synchronous functions that accept a string and return a string:
+
+```typescript
+type FilterFn = (content: string) => string;
+```
+
+#### Error Handling
+
+- If a filter name is not found in `window.journal.filters`, a warning is
+  logged to the console and processing continues
+- If a filter throws an error, the error is logged and the original
+  (unfiltered) content is used for that request
+- Filters are only applied when specified in prompt file frontmatter
+
 ## Privacy & Security
 
 This plugin only communicates with your local Ollama instance. No data is sent to external services.
 
 ## Acknowledgements
 
-This is based on [Build an LLM Journaling Reflection Plugin for Obsidian](https://thomaschang.me/blog/obsidian-reflect) by Thomas Chang, see his implementation [here](https://github.com/tchbw/obsidian-reflect/).
+This is based on [Build an LLM Journaling Reflection Plugin for Obsidian](https://thomaschang.me/blog/obsidian-reflect) by Thomas Chang, see [his implementation](https://github.com/tchbw/obsidian-reflect/).
