@@ -24,4 +24,5 @@ export interface JournalReflectSettings {
     prompts: Record<string, PromptConfig>;
     excludePatterns: string;
     excludeLinkPatterns?: string;
+    keepAlive: string;
 }

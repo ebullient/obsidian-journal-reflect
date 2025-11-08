@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: JournalReflectSettings = {
     ollamaUrl: "http://localhost:11434",
     modelName: "llama3.1",
     excludePatterns: "",
+    keepAlive: "10m",
     prompts: {
         reflection: {
             displayLabel: "reflection question",

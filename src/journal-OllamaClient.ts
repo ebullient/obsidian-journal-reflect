@@ -22,6 +22,7 @@ export interface GenerateOptions {
     temperature?: number;
     topP?: number;
     repeatPenalty?: number;
+    keepAlive?: string;
 }
 
 export interface GenerateResult {
@@ -48,6 +49,7 @@ export class OllamaClient implements IOllamaClient {
                 prompt: documentText,
                 system: systemPrompt,
                 stream: false,
+                keep_alive: options?.keepAlive,
             };
 
             const requestOptions: NonNullable<GenerateRequest["options"]> = {};

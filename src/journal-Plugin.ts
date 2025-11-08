@@ -742,6 +742,7 @@ export class JournalReflectPlugin extends Plugin {
                 temperature: resolvedPrompt.temperature,
                 topP: resolvedPrompt.topP,
                 repeatPenalty: resolvedPrompt.repeatPenalty,
+                keepAlive: this.settings.keepAlive,
             },
         );
 

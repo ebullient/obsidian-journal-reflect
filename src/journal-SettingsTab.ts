@@ -96,6 +96,20 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
+            .setName("Keep Alive")
+            .setDesc(
+                "How long to keep model loaded in memory (e.g., '10m', '1h', '-1' for always). Speeds up subsequent requests.",
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("10m")
+                    .setValue(this.newSettings.keepAlive)
+                    .onChange((value) => {
+                        this.newSettings.keepAlive = value.trim();
+                    }),
+            );
+
+        new Setting(containerEl)
             .setName("Exclude Link Patterns")
             .setDesc(
                 "Skip links whose that matches these patterns (regex, one pattern per line). Links will be matched in markdown format, e.g. [displayText](linkTarget).",
