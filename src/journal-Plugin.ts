@@ -731,8 +731,6 @@ export class JournalReflectPlugin extends Plugin {
                 return content;
             }
         }
-
-        console.debug("Prefiltered content", processedContent);
         return processedContent;
     }
 
