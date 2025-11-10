@@ -11,12 +11,16 @@ export const DEFAULT_SETTINGS: JournalReflectSettings = {
     modelName: "llama3.1",
     excludePatterns: "",
     keepAlive: "10m",
+    debugLogging: false,
+    showLlmRequests: false,
     prompts: {
         reflection: {
             displayLabel: "reflection question",
+            promptFile: "prompts/reflection.md",
         },
         affirmation: {
             displayLabel: "affirmation",
+            promptFile: "prompts/affirmation.md",
         },
     },
 };

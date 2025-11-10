@@ -110,6 +110,32 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
+            .setName("Enable debug logging")
+            .setDesc(
+                "Writes verbose plugin events to the developer console. Useful when troubleshooting prompt resolution issues.",
+            )
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.newSettings.debugLogging ?? false)
+                    .onChange((value) => {
+                        this.newSettings.debugLogging = value;
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName("Show LLM request payloads")
+            .setDesc(
+                "When enabled, logs the exact prompt and document text sent to Ollama. Turn off to keep journal content out of the console.",
+            )
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.newSettings.showLlmRequests ?? false)
+                    .onChange((value) => {
+                        this.newSettings.showLlmRequests = value;
+                    }),
+            );
+
+        new Setting(containerEl)
             .setName("Exclude Link Patterns")
             .setDesc(
                 "Skip links whose that matches these patterns (regex, one pattern per line). Links will be matched in markdown format, e.g. [displayText](linkTarget).",

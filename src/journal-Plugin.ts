@@ -47,17 +47,17 @@ export class JournalReflectPlugin extends Plugin {
             this.generateCommands();
             this.registerContextReaper();
         });
-        console.log("Journal Reflect: loaded");
+        this.logInfo("Loaded");
     }
 
     onunload() {
-        console.log("Journal Reflect: unloaded");
+        this.logInfo("Unloaded");
     }
 
     onExternalSettingsChange = debounce(
         async () => {
             const incoming = await this.loadData();
-            console.debug("Journal Reflect: settings changed", incoming);
+            this.logDebug("Settings changed", incoming);
             this.settings = Object.assign({}, this.settings, incoming);
             await this.saveSettings();
         },
@@ -235,7 +235,7 @@ export class JournalReflectPlugin extends Plugin {
             try {
                 compiled.push(new RegExp(pattern));
             } catch (error) {
-                console.warn(`Invalid exclude pattern: ${pattern}`, error);
+                this.logWarn(`Invalid exclude pattern: ${pattern}`, error);
             }
         }
         return compiled;
@@ -457,7 +457,7 @@ export class JournalReflectPlugin extends Plugin {
             const resolved = await this.readPromptFromFile(
                 promptConfig.promptFile,
             );
-            console.log("Using file prompt", promptConfig.promptFile);
+            this.logDebug("Using file prompt", promptConfig.promptFile);
             if (resolved) {
                 return resolved;
             }
@@ -537,11 +537,11 @@ export class JournalReflectPlugin extends Plugin {
                 };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
-                console.error("Error reading prompt file:", error);
+                this.logError("Error reading prompt file", error);
             }
         } else {
             new Notice(`Prompt file not found: ${promptFilePath}`);
-            console.warn("Prompt file not found:", promptFilePath);
+            this.logWarn("Prompt file not found", promptFilePath);
         }
         return null;
     }
@@ -590,14 +590,14 @@ export class JournalReflectPlugin extends Plugin {
         for (const cachedLink of allLinks) {
             // Skip if link matches exclusion patterns (global or prompt-specific)
             if (this.shouldExcludeLink(cachedLink, pathPatterns)) {
-                console.log("Skipping excluded link:", cachedLink.link);
+                this.logDebug("Skipping excluded link", cachedLink.link);
                 continue;
             }
-            console.log(sourceFile.path, cachedLink.link);
+            this.logDebug("Expanding link", sourceFile.path, cachedLink.link);
 
             // Skip if we've already processed this link target
             if (processedLinks.has(cachedLink.link)) {
-                console.log("Skipping visited link:", cachedLink.link);
+                this.logDebug("Skipping visited link", cachedLink.link);
                 continue;
             }
             processedLinks.add(cachedLink.link);
@@ -613,7 +613,10 @@ export class JournalReflectPlugin extends Plugin {
             if (targetFile) {
                 // Skip if we've already processed this file (circular reference)
                 if (processedFiles.has(targetFile.path)) {
-                    console.log("Skipping circular reference", targetFile.path);
+                    this.logDebug(
+                        "Skipping circular reference",
+                        targetFile.path,
+                    );
                     continue;
                 }
 
@@ -647,8 +650,8 @@ export class JournalReflectPlugin extends Plugin {
                     );
                     expandedContent += `\n\n${quotedContent}`;
                 } catch (error) {
-                    console.warn(
-                        "Could not read linked file:",
+                    this.logWarn(
+                        "Could not read linked file",
                         cachedLink.link,
                         error,
                     );
@@ -717,7 +720,7 @@ export class JournalReflectPlugin extends Plugin {
         for (const filterName of filterNames) {
             const filterFn = window.journal?.filters?.[filterName];
             if (!filterFn) {
-                console.warn(
+                this.logWarn(
                     `Filter "${filterName}" not found in window.journal.filters`,
                 );
                 continue;
@@ -726,13 +729,11 @@ export class JournalReflectPlugin extends Plugin {
             try {
                 processedContent = filterFn(processedContent);
             } catch (error) {
-                console.error(`Error applying filter "${filterName}":`, error);
+                this.logError(`Error applying filter "${filterName}"`, error);
                 // Continue with original content on error
                 return content;
             }
         }
-
-        console.debug("Prefiltered content", processedContent);
         return processedContent;
     }
 
@@ -775,18 +776,29 @@ export class JournalReflectPlugin extends Plugin {
         );
         const context = this.getContextForKey(contextKey);
 
+        const generateOptions = {
+            numCtx: resolvedPrompt.numCtx,
+            context,
+            temperature: resolvedPrompt.temperature,
+            topP: resolvedPrompt.topP,
+            repeatPenalty: resolvedPrompt.repeatPenalty,
+            keepAlive: this.settings.keepAlive,
+        };
+
+        this.logLlmRequest({
+            model,
+            promptKey,
+            file: activeNote.path,
+            systemPrompt: resolvedPrompt.prompt,
+            documentText,
+            options: generateOptions,
+        });
+
         const result = await this.ollamaClient.generate(
             model,
             resolvedPrompt.prompt,
             documentText,
-            {
-                numCtx: resolvedPrompt.numCtx,
-                context,
-                temperature: resolvedPrompt.temperature,
-                topP: resolvedPrompt.topP,
-                repeatPenalty: resolvedPrompt.repeatPenalty,
-                keepAlive: this.settings.keepAlive,
-            },
+            generateOptions,
         );
 
         if (contextKey !== null && result.context) {
@@ -794,5 +806,29 @@ export class JournalReflectPlugin extends Plugin {
         }
 
         return result.response;
+    }
+
+    private logInfo(message: string, ...params: unknown[]): void {
+        console.info(`[Journal Reflect] ${message}`, ...params);
+    }
+
+    private logWarn(message: string, ...params: unknown[]): void {
+        console.warn(`[Journal Reflect] ${message}`, ...params);
+    }
+
+    private logError(message: string, ...params: unknown[]): void {
+        console.error(`[Journal Reflect] ${message}`, ...params);
+    }
+
+    private logDebug(message: string, ...params: unknown[]): void {
+        if (this.settings?.debugLogging) {
+            console.debug(`[Journal Reflect] ${message}`, ...params);
+        }
+    }
+
+    private logLlmRequest(payload: unknown): void {
+        if (this.settings?.showLlmRequests) {
+            console.info("[Journal Reflect][LLM Request]", payload);
+        }
     }
 }

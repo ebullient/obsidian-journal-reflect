@@ -20,6 +20,8 @@ export interface ResolvedPrompt {
 }
 
 export interface JournalReflectSettings {
+    showLlmRequests: boolean;
+    debugLogging: boolean;
     ollamaUrl: string;
     modelName: string;
     prompts: Record<string, PromptConfig>;
