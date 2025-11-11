@@ -172,10 +172,9 @@ export class JournalReflectPlugin extends Plugin {
             resolved.excludePatterns,
         );
 
-        const promptConfig = this.settings.prompts[promptKey];
         const filteredDocContent = filterCallouts(
             expandedDocContent,
-            promptConfig?.excludeCalloutTypes || "",
+            resolved.excludeCalloutTypes || "",
         );
         const processedContent = this.applyPrefilters(
             filteredDocContent,
@@ -505,17 +504,13 @@ export class JournalReflectPlugin extends Plugin {
                     frontmatter?.["is-continuous"] ??
                     frontmatter?.continuous;
                 const isContinuous = this.parseBoolean(rawContinuous);
-                const rawIncludeLinks =
-                    frontmatter?.includeLinks ??
-                    frontmatter?.include_links ??
-                    frontmatter?.["include-links"];
-                const includeLinks = this.parseBoolean(rawIncludeLinks);
-                const excludePatternsRaw =
-                    frontmatter?.excludePatterns ??
-                    frontmatter?.exclude_patterns ??
-                    frontmatter?.["exclude-patterns"];
-                const excludePatterns =
-                    this.compileExcludePatterns(excludePatternsRaw);
+                const includeLinks = this.parseBoolean(
+                    frontmatter?.includeLinks,
+                );
+                const excludePatterns = this.compileExcludePatterns(
+                    frontmatter?.excludePatterns,
+                );
+                const excludeCalloutTypes = frontmatter?.excludeCalloutTypes;
                 const filters = Array.isArray(frontmatter?.filters)
                     ? frontmatter.filters
                     : undefined;
@@ -529,6 +524,7 @@ export class JournalReflectPlugin extends Plugin {
                     isContinuous,
                     includeLinks,
                     excludePatterns,
+                    excludeCalloutTypes,
                     sourcePath: promptFilePath,
                     temperature,
                     topP,

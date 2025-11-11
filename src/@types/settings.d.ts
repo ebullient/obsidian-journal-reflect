@@ -2,7 +2,6 @@ export interface PromptConfig {
     displayLabel: string;
     promptFile?: string;
     calloutHeading?: string;
-    excludeCalloutTypes?: string;
 }
 
 export interface ResolvedPrompt {
@@ -12,6 +11,7 @@ export interface ResolvedPrompt {
     isContinuous?: boolean;
     includeLinks?: boolean;
     excludePatterns?: RegExp[];
+    excludeCalloutTypes?: string;
     sourcePath?: string;
     temperature?: number;
     topP?: number;
