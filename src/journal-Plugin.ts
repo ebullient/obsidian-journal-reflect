@@ -804,19 +804,19 @@ export class JournalReflectPlugin extends Plugin {
         return result.response;
     }
 
-    private logInfo(message: string, ...params: unknown[]): void {
+    logInfo(message: string, ...params: unknown[]): void {
         console.info(`[Journal Reflect] ${message}`, ...params);
     }
 
-    private logWarn(message: string, ...params: unknown[]): void {
+    logWarn(message: string, ...params: unknown[]): void {
         console.warn(`[Journal Reflect] ${message}`, ...params);
     }
 
-    private logError(message: string, ...params: unknown[]): void {
+    logError(message: string, ...params: unknown[]): void {
         console.error(`[Journal Reflect] ${message}`, ...params);
     }
 
-    private logDebug(message: string, ...params: unknown[]): void {
+    logDebug(message: string, ...params: unknown[]): void {
         if (this.settings?.debugLogging) {
             console.debug(`[Journal Reflect] ${message}`, ...params);
         }

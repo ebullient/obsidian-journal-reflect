@@ -1,4 +1,4 @@
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { PluginSettingTab, Setting } from "obsidian";
 import type { JournalReflectSettings, PromptConfig } from "./@types/settings";
 import { OllamaClient } from "./journal-OllamaClient";
 import type { JournalReflectPlugin } from "./journal-Plugin";
@@ -31,37 +31,65 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
             this.newSettings = this.cloneSettings();
         }
 
-        const { containerEl } = this;
-        containerEl.empty();
+        this.containerEl.empty();
 
-        containerEl.createEl("h2", { text: "Journal Reflect Settings" });
+        new Setting(this.containerEl)
+            .setName("Journal Reflect")
+            .setHeading()
+            .setDesc(
+                "Configure your local Ollama instance for AI-powered journal reflections.",
+            );
 
-        new Setting(containerEl)
-            .setName("Save Settings")
+        new Setting(this.containerEl)
+            .setName("Save settings")
             .setClass("journal-reflect-save-reset")
             .addButton((button) =>
                 button
-                    .setButtonText("Reset")
-                    .setTooltip("Reset to current saved settings")
+                    .setIcon("reset")
+                    .setTooltip("Reset to previously saved values")
                     .onClick(() => {
                         this.reset();
                     }),
             )
-            .addButton((button) =>
+            .addButton((button) => {
                 button
-                    .setButtonText("Save")
+                    .setIcon("save")
                     .setCta()
                     .setTooltip("Save all changes")
                     .onClick(async () => {
                         await this.save();
-                    }),
+                    });
+            });
+
+        new Setting(this.containerEl)
+            .setName("Ollama")
+            .setDesc(
+                "Configure your local Ollama instance for AI-powered journal reflections.",
             );
 
-        containerEl.createEl("p", {
-            text: "Configure your local Ollama instance for AI-powered journal reflections.",
-        });
+        const testConnection = async (): Promise<string> => {
+            try {
+                // Create temporary client with current form settings
+                const tempClient = new OllamaClient(this.newSettings.ollamaUrl);
+                const isConnected = await tempClient.checkConnection();
 
-        new Setting(containerEl)
+                if (isConnected) {
+                    const models = await tempClient.listModels();
+                    return models.length > 0
+                        ? `✅ Connected to Ollama | Available models: ${models.join(", ")}`
+                        : "✅ Connected to Ollama | no models found";
+                } else {
+                    return "❌ Cannot connect to Ollama";
+                }
+            } catch (error) {
+                const errorMsg =
+                    error instanceof Error ? error.message : String(error);
+                this.plugin.logError("❌ Cannot connect to Ollama", error);
+                return `❌ Cannot connect to Ollama: ${errorMsg}`;
+            }
+        };
+
+        const connection = new Setting(this.containerEl)
             .setName("Ollama URL")
             .setDesc(
                 "URL of your Ollama instance (default: http://localhost:11434)",
@@ -79,12 +107,29 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                             this.newSettings.ollamaUrl = trimmed;
                         }
                     }),
+            )
+            .addButton((bc) =>
+                bc
+                    .setTooltip("Test Connection")
+                    .setIcon("cable")
+                    .onClick(async (_e) => {
+                        bc.setTooltip("Testing...");
+                        bc.setDisabled(true);
+
+                        const message = await testConnection();
+                        connection.setDesc(
+                            `${this.newSettings.ollamaUrl} - ${message}`,
+                        );
+
+                        bc.setTooltip("Test Connection");
+                        bc.setDisabled(false);
+                    }),
             );
 
-        new Setting(containerEl)
+        new Setting(this.containerEl)
             .setName("Model Name")
             .setDesc(
-                "Name of the Ollama model to use (e.g., llama3.1, mistral)",
+                "Name of the default Ollama model to use (e.g., llama3.1, mistral)",
             )
             .addText((text) =>
                 text
@@ -95,7 +140,7 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     }),
             );
 
-        new Setting(containerEl)
+        new Setting(this.containerEl)
             .setName("Keep Alive")
             .setDesc(
                 "How long to keep model loaded in memory (e.g., '10m', '1h', '-1' for always). Speeds up subsequent requests.",
@@ -109,33 +154,30 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     }),
             );
 
-        new Setting(containerEl)
-            .setName("Enable debug logging")
+        new Setting(this.containerEl)
+            .setName("Prompts")
+            .setHeading()
             .setDesc(
-                "Writes verbose plugin events to the developer console. Useful when troubleshooting prompt resolution issues.",
-            )
-            .addToggle((toggle) =>
-                toggle
-                    .setValue(this.newSettings.debugLogging ?? false)
-                    .onChange((value) => {
-                        this.newSettings.debugLogging = value;
+                "For each configured prompt, a command is automatically created, Generate [prompt name]. When the command is run, it will send the prompt associated with the command, the current note, and (optionally) the contents of linked notes to the LLM. Generated content is inserted as blockquotes (>) at the current cursor position in the current note.",
+            );
+
+        this.displayPromptConfigs(this.containerEl);
+
+        new Setting(this.containerEl)
+            .setName("Add New Prompt")
+            .setDesc("Add a new prompt configuration")
+            .addButton((button) =>
+                button
+                    .setButtonText("Add Prompt")
+                    .setCta()
+                    .onClick(() => {
+                        this.addNewPrompt();
                     }),
             );
 
-        new Setting(containerEl)
-            .setName("Show LLM request payloads")
-            .setDesc(
-                "When enabled, logs the exact prompt and document text sent to Ollama. Turn off to keep journal content out of the console.",
-            )
-            .addToggle((toggle) =>
-                toggle
-                    .setValue(this.newSettings.showLlmRequests ?? false)
-                    .onChange((value) => {
-                        this.newSettings.showLlmRequests = value;
-                    }),
-            );
+        new Setting(this.containerEl).setName("Other").setHeading();
 
-        new Setting(containerEl)
+        new Setting(this.containerEl)
             .setName("Exclude Link Patterns")
             .setDesc(
                 "Skip links whose that matches these patterns (regex, one pattern per line). Links will be matched in markdown format, e.g. [displayText](linkTarget).",
@@ -154,91 +196,31 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     ?.setAttribute("rows", "4");
             });
 
-        containerEl.createEl("h3", { text: "Prompt Configurations" });
-        containerEl.createEl("p", {
-            text: "Configure different types of prompts. Each prompt creates a command that adds content at your cursor position.",
-        });
-
-        this.displayPromptConfigs(containerEl);
-
-        new Setting(containerEl)
-            .setName("Add New Prompt")
-            .setDesc("Add a new prompt configuration")
-            .addButton((button) =>
-                button
-                    .setButtonText("Add Prompt")
-                    .setCta()
-                    .onClick(() => {
-                        this.addNewPrompt();
+        new Setting(this.containerEl)
+            .setName("Show LLM request payloads")
+            .setDesc(
+                "When enabled, logs the exact prompt and document text sent to Ollama. Turn off to keep journal content out of the console.",
+            )
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.newSettings.showLlmRequests ?? false)
+                    .onChange((value) => {
+                        this.newSettings.showLlmRequests = value;
                     }),
             );
 
-        const connectionStatus = containerEl.createEl("div", {
-            cls: "setting-item",
-        });
-        const connectionInfo = connectionStatus.createEl("div", {
-            cls: "setting-item-info",
-        });
-        connectionInfo.createEl("div", {
-            cls: "setting-item-name",
-            text: "Connection Status",
-        });
-        const connectionDesc = connectionInfo.createEl("div", {
-            cls: "setting-item-description",
-        });
-
-        const connectionControl = connectionStatus.createEl("div", {
-            cls: "setting-item-control",
-        });
-        const testButton = connectionControl.createEl("button", {
-            text: "Test Connection",
-            cls: "mod-cta",
-        });
-
-        testButton.addEventListener("click", async () => {
-            testButton.textContent = "Testing...";
-            testButton.disabled = true;
-
-            try {
-                // Create temporary client with current form settings
-                const tempClient = new OllamaClient(this.newSettings.ollamaUrl);
-                const isConnected = await tempClient.checkConnection();
-
-                if (isConnected) {
-                    connectionDesc.textContent = "✅ Connected to Ollama";
-                    connectionDesc.style.color = "var(--text-success)";
-
-                    const models = await tempClient.listModels();
-                    if (models.length > 0) {
-                        connectionDesc.textContent += ` | Available models: ${models.join(", ")}`;
-                    }
-                } else {
-                    connectionDesc.textContent = "❌ Cannot connect to Ollama";
-                    connectionDesc.style.color = "var(--text-error)";
-                }
-            } catch (error) {
-                const errorMsg =
-                    error instanceof Error ? error.message : String(error);
-                connectionDesc.textContent = `❌ Connection error: ${errorMsg}`;
-                connectionDesc.style.color = "var(--text-error)";
-            }
-
-            testButton.textContent = "Test Connection";
-            testButton.disabled = false;
-        });
-
-        containerEl.createEl("h3", { text: "Usage" });
-        const usage = containerEl.createEl("div");
-        usage.createEl("p", {
-            text: "For each configured prompt, a command is automatically created:",
-        });
-        const list = usage.createEl("ul");
-        list.createEl("li", {
-            text: "Generate [prompt name] - Adds content at your cursor position",
-        });
-        usage.createEl("p", {
-            text: "Generated content appears as blockquotes (>) in your journal. Position your cursor where you want the content to appear.",
-        });
+        new Setting(this.containerEl)
+            .setName("Enable debug logging")
+            .setDesc(
+                "Writes verbose plugin events to the developer console. Useful when troubleshooting prompt resolution issues.",
+            )
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.newSettings.debugLogging ?? false)
+                    .onChange((value) => {
+                        this.newSettings.debugLogging = value;
+                    }),
+            );
     }
 
     displayPromptConfigs(containerEl: HTMLElement): void {
@@ -247,10 +229,6 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
         )) {
             const promptSection = containerEl.createEl("div", {
                 cls: "setting-item-group journal-reflect-prompt-config",
-            });
-
-            promptSection.createEl("h4", {
-                text: `${promptConfig.displayLabel} Configuration`,
             });
 
             new Setting(promptSection)
@@ -265,6 +243,15 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                         }),
                 );
 
+            const checkFile = async (
+                inputEl: HTMLElement,
+                filePath: string,
+            ) => {
+                (await this.app.vault.adapter.exists(filePath))
+                    ? inputEl.addClass("fileFound")
+                    : inputEl.removeClass("fileFound");
+            };
+
             new Setting(promptSection)
                 .setName("Prompt File")
                 .setDesc(
@@ -274,9 +261,11 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     text
                         .setPlaceholder("prompts/my-prompt.md")
                         .setValue(promptConfig.promptFile || "")
-                        .onChange((value) => {
+                        .onChange(async (value) => {
+                            const path = value.trim();
                             this.newSettings.prompts[promptKey].promptFile =
-                                value.trim();
+                                path;
+                            checkFile(text.inputEl, path);
                         }),
                 );
 
