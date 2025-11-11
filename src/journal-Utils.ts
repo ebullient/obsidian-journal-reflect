@@ -61,7 +61,9 @@ export function formatAsEmbedBlockquote(
 
 /**
  * Filters out callouts of specified types from content.
- * Handles nested callouts by tracking the exact quote prefix.
+ * Handles nested callouts by tracking depth and parent exclusion state.
+ * If a callout is excluded, all nested content (including other callouts)
+ * is also excluded until we return to the parent level or shallower.
  *
  * @param content - The content to filter
  * @param calloutTypes - Newline-separated list of callout types to exclude
@@ -83,40 +85,46 @@ export function filterCallouts(content: string, calloutTypes: string): string {
 
     const lines = content.split("\n");
     const result: string[] = [];
-    let skipPrefix = "";
+    let skipDepth = -1; // -1 means not skipping, >= 0 means skip at this depth
+    let previousLineBlank = false;
 
     for (const line of lines) {
-        // If we're skipping, check if we should continue
-        if (skipPrefix) {
-            const trimmedLine = line.trimStart();
-            const trimmedPrefix = skipPrefix.trim();
-            const depthMatch =
-                skipPrefix.split(">").length === trimmedLine.split(">").length;
+        const trimmed = line.trimStart();
 
-            // Continue skipping if line starts with prefix and isn't a new callout
-            if (
-                trimmedLine.startsWith(trimmedPrefix) &&
-                !(trimmedLine.includes("[!") && depthMatch)
-            ) {
+        // Count '>' chars at start (handles both '>>' and '> >' style)
+        const depth = (trimmed.match(/^(?:>\s*)*/)?.[0].match(/>/g) || [])
+            .length;
+        const isBlank = depth === 0 && line.trim().length === 0;
+        const calloutMatch = line.match(/^((?:>\s*)+)\[!(\w+)\]/);
+
+        // Currently skipping an excluded callout?
+        if (skipDepth >= 0) {
+            // Skip deeper or same-depth non-header content
+            if (depth > skipDepth || (depth === skipDepth && !calloutMatch)) {
+                previousLineBlank = isBlank;
                 continue;
             }
-
-            // Stop skipping - but don't push yet, fall through to check this line
-            skipPrefix = "";
+            // Same-depth callout without blank line separator? Keep skipping
+            if (depth === skipDepth && calloutMatch && !previousLineBlank) {
+                previousLineBlank = isBlank;
+                continue;
+            }
+            // Otherwise stop skipping (shallower depth or separated sibling)
+            skipDepth = -1;
         }
 
-        // Check if line starts a callout we should exclude
-        const calloutMatch = line.match(/^((?:>\s*)+)\[!(\w+)\]/);
+        // Check if this callout should be excluded
         if (calloutMatch) {
-            const prefix = calloutMatch[1].trim();
             const calloutType = calloutMatch[2].toLowerCase();
             if (types.some((t) => t.toLowerCase() === calloutType)) {
-                skipPrefix = prefix;
+                skipDepth = depth;
+                previousLineBlank = isBlank;
                 continue;
             }
         }
 
         result.push(line);
+        previousLineBlank = isBlank;
     }
 
     return result.join("\n");

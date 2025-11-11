@@ -3,164 +3,151 @@ import { filterCallouts } from "../src/journal-Utils";
 
 describe("filterCallouts", () => {
     it("should return content unchanged when no callout types specified", () => {
-        const content = "> [!ai] AI Response\n> This is AI text";
+        const content = "> [!note] Note\n> Some text";
         const result = filterCallouts(content, "");
         expect(result).toBe(content);
     });
 
-    it("should filter out simple callout", () => {
-        const content = `Some text
-> [!ai] AI Response
-> This is AI text
-> More AI text
-Regular text after`;
-
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`Some text
-Regular text after`);
-    });
-
-    it("should filter out multiple callout types", () => {
-        const content = `Text
-> [!ai] AI Response
-> AI text
-> [!magic] Magic
-> Magic text
-Keep this`;
-
-        const result = filterCallouts(content, "ai\nmagic");
-        expect(result).toBe(`Text
-Keep this`);
-    });
-
-    it("should handle nested callouts - filter inner callout", () => {
-        const content = `> [!quote] Outer
-> Regular quote text
->> [!ai] Inner AI
->> This should be filtered
-> Back to quote
-Normal text`;
-
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`> [!quote] Outer
-> Regular quote text
-> Back to quote
-Normal text`);
-    });
-
-    it("should handle nested callouts - filter outer callout", () => {
-        const content = `> [!ai] Outer AI
-> AI text
->> [!note] Inner note
->> Note text
-> More AI text
-Normal text`;
-
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`Normal text`);
-    });
-
-    it("should handle triple nested callouts", () => {
-        const content = `>> [!quote] Level 2
->> Quote text
->>> [!ai] Level 3 AI
->>> AI text at level 3
->> Back to level 2
-Normal text`;
-
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`>> [!quote] Level 2
->> Quote text
->> Back to level 2
-Normal text`);
-    });
-
     it("should be case insensitive", () => {
-        const content = `> [!AI] AI Response
-> Text
-> [!Magic] Magic
-> More text`;
-
-        const result = filterCallouts(content, "ai\nmagic");
+        const content = "> [!EXCLUDE] Content\n> Text";
+        const result = filterCallouts(content, "exclude");
         expect(result).toBe("");
     });
 
-    it("should keep callouts not in exclude list", () => {
-        const content = `> [!note] Keep this
-> Note text
-> [!ai] Remove this
-> AI text
-> [!warning] Keep this too
-> Warning text`;
+    it("should filter simple callout and all its content", () => {
+        const content = `Keep this
+> [!exclude] Remove this
+> All of this content
+> Should be removed
+Keep this too`;
 
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`> [!note] Keep this
-> Note text
-> [!warning] Keep this too
-> Warning text`);
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`Keep this
+Keep this too`);
     });
 
-    it("should handle empty lines in callouts", () => {
-        const content = `> [!ai] AI Response
-> Line 1
->
-> Line 3 after empty
-Regular text`;
+    it("should filter multiple callout types", () => {
+        const content = `Keep
+> [!exclude] Remove
+> Content
 
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`Regular text`);
+> [!other] Also remove
+> More content
+
+Keep this`;
+
+        const result = filterCallouts(content, "exclude\nother");
+        expect(result).toBe(`Keep
+
+
+Keep this`);
     });
 
-    it("should handle callout immediately followed by different depth", () => {
-        const content = `>> [!ai] Nested AI
->> AI text
-> Different depth - should stop filtering
+    it("should filter nested excluded callout inside allowed callout", () => {
+        const content = `> [!note] Keep this callout
+> Keep this content
+>> [!exclude] Remove nested
+>> Remove this content
+> Keep this content too
 Normal text`;
 
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`> Different depth - should stop filtering
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`> [!note] Keep this callout
+> Keep this content
+> Keep this content too
 Normal text`);
     });
 
-    it("should handle multiple consecutive excluded callouts at same level", () => {
-        const content = `> [!ai] First AI
-> AI text
-> [!ai] Second AI
-> More AI text
-Normal text`;
+    it("should filter parent callout and ALL nested content", () => {
+        const content = `> [!exclude] Remove parent
+> Remove this
+>> [!note] This nested callout also removed
+>> All nested content removed
+> Back to parent - still removed
+Keep this`;
 
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`Normal text`);
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe("Keep this");
     });
 
-    it("should handle real-world embedded file scenario", () => {
-        const content = `My journal entry
-> [!quote] Embedded note
-> Some context from embedded file
->> [!ai] AI response in embedded
->> This was generated by AI
->> Should be filtered out
-> Back to embedded content
-> [!magic] Affirmation
-> You are doing great
-Regular journal text`;
+    it("should filter deeply nested excluded callout (3 levels)", () => {
+        const content = `> [!note] Keep level 1
+> Keep content
+> > [!info] Keep level 2
+> > > [!exclude] Remove level 3
+> > > Remove this deep content
+> > Keep level 2 content
+> Keep level 1 content
+Normal`;
 
-        const result = filterCallouts(content, "ai\nmagic");
-        expect(result).toBe(`My journal entry
-> [!quote] Embedded note
-> Some context from embedded file
-> Back to embedded content
-Regular journal text`);
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`> [!note] Keep level 1
+> Keep content
+> > [!info] Keep level 2
+> > Keep level 2 content
+> Keep level 1 content
+Normal`);
     });
 
-    it("should handle whitespace variations in quote prefix", () => {
-        const content = `> [!ai] AI
->Text without space
-> Text with space
->>Nested without space
-Regular`;
+    it("should handle whitespace variations in nested depth counting", () => {
+        const content = `> [!note] Keep
+> Content
+>> [!exclude] Remove (no space)
+>> Remove content
+> > [!exclude] Remove (with space)
+> > Remove content
+> Keep
+Normal`;
 
-        const result = filterCallouts(content, "ai");
-        expect(result).toBe(`Regular`);
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`> [!note] Keep
+> Content
+> Keep
+Normal`);
+    });
+
+    it("should treat sibling callouts with blank lines as separate", () => {
+        const content = `> [!note] Keep
+
+> [!exclude] Remove
+
+> [!warning] Keep`;
+
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`> [!note] Keep
+
+
+> [!warning] Keep`);
+    });
+
+    it("should filter sibling callouts without blank lines together", () => {
+        const content = `> [!note] Keep this
+> Content
+> [!exclude] Remove from here
+> Excluded content
+> [!warning] Also removed (no blank line)
+> Also excluded`;
+
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`> [!note] Keep this
+> Content`);
+    });
+
+    it("should handle nested siblings with blank lines", () => {
+        const content = `> [!note] Keep outer
+> Content
+>> [!exclude] Remove nested
+
+>> [!warning] Keep nested (blank line)
+>> Keep this
+> Keep outer content`;
+
+        const result = filterCallouts(content, "exclude");
+        expect(result).toBe(`> [!note] Keep outer
+> Content
+
+>> [!warning] Keep nested (blank line)
+>> Keep this
+> Keep outer content`);
     });
 });
