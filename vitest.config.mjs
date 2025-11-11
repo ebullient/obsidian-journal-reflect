@@ -1,9 +1,13 @@
 import { defineConfig } from "vitest/config";
+import { config } from "dotenv";
+
+config();
 
 export default defineConfig({
     test: {
         globals: true,
         environment: "node",
+        testTimeout: 30000, // 30 seconds (default is 5000ms)
     },
     resolve: {
         alias: {

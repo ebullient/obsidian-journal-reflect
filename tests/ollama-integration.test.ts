@@ -1,9 +1,26 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { OllamaClient } from "../src/journal-OllamaClient";
+import { Logger } from "../src/@types";
 
 // Integration test for OllamaClient
 // Set OLLAMA_URL in .env or it defaults to http://localhost:11434
 // Make sure Ollama is running and has at least one model
+
+const logger: Logger = {
+    logInfo: function (message: string, ...params: unknown[]): void {
+        console.log(message, ...params);
+    },
+    logWarn: function (message: string, ...params: unknown[]): void {
+        console.log(message, ...params);
+    },
+    logError: function (error: unknown, message: string, ...params: unknown[]) {
+        console.log(error, message, ...params);
+        return "error";
+    },
+    logDebug: function (message: string, ...params: unknown[]): void {
+        console.log(message, ...params);
+    }
+}
 
 describe("OllamaClient Integration Test", () => {
     let client: OllamaClient;
@@ -12,7 +29,7 @@ describe("OllamaClient Integration Test", () => {
     const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
 
     beforeAll(async () => {
-        client = new OllamaClient(ollamaUrl);
+        client = new OllamaClient(ollamaUrl, logger);
 
         // Check if Ollama is available
         const isConnected = await client.checkConnection();
@@ -59,9 +76,10 @@ describe("OllamaClient Integration Test", () => {
         const systemPrompt = "You are a thoughtful journal reflection coach. Ask insightful, open-ended questions.";
         const journalText = "Today I went for a walk in the park and saw beautiful autumn leaves. It made me feel peaceful and grateful.";
 
-        const reflection = await client.generate(model, systemPrompt, journalText);
+        const response = await client.generate(model, systemPrompt, journalText);
+        expect(response).toBeTruthy();
 
-        expect(reflection).toBeTruthy();
+        const reflection = response.response;
         expect(typeof reflection).toBe('string');
         expect(reflection!.length).toBeGreaterThan(0);
 
@@ -73,9 +91,10 @@ describe("OllamaClient Integration Test", () => {
         const systemPrompt = "You are a supportive coach. Provide encouraging, personalized affirmations.";
         const journalText = "Today I struggled with confidence during my presentation at work, but I pushed through and finished it.";
 
-        const affirmation = await client.generate(model, systemPrompt, journalText);
+        const response = await client.generate(model, systemPrompt, journalText);
+        expect(response).toBeTruthy();
 
-        expect(affirmation).toBeTruthy();
+        const affirmation = response.response;
         expect(typeof affirmation).toBe('string');
         expect(affirmation!.length).toBeGreaterThan(0);
 
@@ -87,10 +106,12 @@ describe("OllamaClient Integration Test", () => {
         const systemPrompt = "You are helpful.";
         const journalText = "";
 
-        const reflection = await client.generate(model, systemPrompt, journalText);
+        const response = await client.generate(model, systemPrompt, journalText);
+        expect(response).toBeTruthy();
 
         // Should return empty string for empty input
-        expect(reflection).toBe("");
+        const reflection = response.response;
         expect(typeof reflection).toBe('string');
+        expect(reflection).toBe("");
     });
 });

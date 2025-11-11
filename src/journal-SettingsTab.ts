@@ -1,5 +1,5 @@
-import { PluginSettingTab, Setting } from "obsidian";
-import type { JournalReflectSettings, PromptConfig } from "./@types/settings";
+import { type App, PluginSettingTab, Setting } from "obsidian";
+import type { JournalReflectSettings, PromptConfig } from "./@types";
 import { OllamaClient } from "./journal-OllamaClient";
 import type { JournalReflectPlugin } from "./journal-Plugin";
 
@@ -70,7 +70,10 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
         const testConnection = async (): Promise<string> => {
             try {
                 // Create temporary client with current form settings
-                const tempClient = new OllamaClient(this.newSettings.ollamaUrl);
+                const tempClient = new OllamaClient(
+                    this.newSettings.ollamaUrl,
+                    this.plugin,
+                );
                 const isConnected = await tempClient.checkConnection();
 
                 if (isConnected) {
@@ -82,9 +85,10 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                     return "❌ Cannot connect to Ollama";
                 }
             } catch (error) {
-                const errorMsg =
-                    error instanceof Error ? error.message : String(error);
-                this.plugin.logError("❌ Cannot connect to Ollama", error);
+                const errorMsg = this.plugin.logError(
+                    error,
+                    "❌ Cannot connect to Ollama",
+                );
                 return `❌ Cannot connect to Ollama: ${errorMsg}`;
             }
         };

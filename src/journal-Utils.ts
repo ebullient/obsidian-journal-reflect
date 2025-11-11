@@ -1,4 +1,189 @@
 /**
+ * Normalizes a string or array value to an array of trimmed, non-empty strings.
+ * Useful for parsing YAML frontmatter that can be either format.
+ *
+ * @param value - String (newline-delimited) or array to normalize
+ * @returns Array of trimmed non-empty strings, or undefined if input is empty
+ */
+export function normalizeToArray(
+    value?: string | string[],
+): string[] | undefined {
+    if (!value) {
+        return undefined;
+    }
+    if (Array.isArray(value)) {
+        return value;
+    }
+    return value
+        .split("\n")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+}
+
+/**
+ * Compiles string patterns into RegExp array.
+ * Invalid patterns are silently skipped.
+ *
+ * @param patterns - String or array of regex patterns
+ * @returns Array of compiled RegExp objects
+ */
+export function compileExcludePatterns(
+    excludePatternsRaw?: string | string[],
+): RegExp[] {
+    const patterns = normalizeToArray(excludePatternsRaw);
+    if (!patterns) {
+        return [];
+    }
+    const compiled: RegExp[] = [];
+    for (const pattern of patterns) {
+        try {
+            compiled.push(new RegExp(pattern));
+        } catch {
+            // Silently skip invalid patterns
+        }
+    }
+    return compiled;
+}
+
+/**
+ * Parses a boolean value from various input types.
+ *
+ * @param value - Value to parse (boolean, string, or other)
+ * @returns Parsed boolean or undefined if not parseable
+ */
+export function parseBoolean(value: unknown): boolean | undefined {
+    if (value === null || value === undefined) {
+        return undefined;
+    }
+    if (typeof value === "boolean") {
+        return value;
+    }
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "true") {
+            return true;
+        }
+        if (normalized === "false") {
+            return false;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Parses a finite number from various input types.
+ *
+ * @param value - Value to parse (number, string, or other)
+ * @returns Parsed number or undefined if not finite
+ */
+export function parseFiniteNumber(value: unknown): number | undefined {
+    if (value === null || value === undefined) {
+        return undefined;
+    }
+
+    const parsed =
+        typeof value === "number"
+            ? value
+            : Number.parseFloat(String(value).trim());
+
+    if (Number.isFinite(parsed)) {
+        return parsed;
+    }
+    return undefined;
+}
+
+/**
+ * Parses a positive integer from various input types.
+ *
+ * @param value - Value to parse (number, string, or other)
+ * @returns Parsed positive integer or undefined if invalid
+ */
+export function parsePositiveInteger(value: unknown): number | undefined {
+    const parsed = parseFiniteNumber(value);
+
+    if (parsed === undefined) {
+        return undefined;
+    }
+    if (Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+    }
+    return undefined;
+}
+
+/**
+ * Gets the first defined value from frontmatter using multiple possible keys.
+ *
+ * @param frontmatter - Frontmatter object to search
+ * @param keys - Array of keys to try
+ * @returns First defined value found, or undefined
+ */
+export function getFrontmatterValue(
+    frontmatter: Record<string, unknown> | undefined,
+    keys: string[],
+): unknown {
+    if (!frontmatter) {
+        return undefined;
+    }
+    for (const key of keys) {
+        if (frontmatter[key] !== undefined) {
+            return frontmatter[key];
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Parses a numeric parameter from frontmatter with a validation constraint.
+ *
+ * @param frontmatter - Frontmatter object to search
+ * @param keys - Array of keys to try
+ * @param constraint - Validation function for the parsed number
+ * @returns Parsed and validated number, or undefined
+ */
+export function parseParameterWithConstraint(
+    frontmatter: Record<string, unknown> | undefined,
+    keys: string[],
+    constraint: (val: number) => boolean,
+): number | undefined {
+    const candidate = parseFiniteNumber(getFrontmatterValue(frontmatter, keys));
+    return candidate !== undefined && constraint(candidate)
+        ? candidate
+        : undefined;
+}
+
+/**
+ * Extracts a string value from frontmatter, supporting per-prompt overrides.
+ * If the value is a string, returns it directly.
+ * If the value is an object, looks up the promptKey within it.
+ *
+ * @param frontmatter - Frontmatter object to search
+ * @param key - Key to look up
+ * @param promptKey - Prompt-specific key for nested lookup
+ * @returns Extracted string value or undefined
+ */
+export function extractFrontmatterValue(
+    frontmatter: Record<string, unknown> | undefined,
+    key: string,
+    promptKey: string,
+): string | undefined {
+    if (!frontmatter?.[key]) {
+        return undefined;
+    }
+
+    const value = frontmatter[key];
+    if (typeof value === "string") {
+        return value;
+    }
+    if (typeof value === "object" && value !== null) {
+        const promptValue = (value as Record<string, unknown>)[promptKey];
+        if (typeof promptValue === "string") {
+            return promptValue;
+        }
+    }
+    return undefined;
+}
+
+/**
  * Parses a link reference into path and subpath components.
  *
  * @param link - The link to parse (e.g., "file#heading" or "file")
@@ -66,22 +251,18 @@ export function formatAsEmbedBlockquote(
  * is also excluded until we return to the parent level or shallower.
  *
  * @param content - The content to filter
- * @param calloutTypes - Newline-separated list of callout types to exclude
+ * @param calloutTypes - Array of callout types to exclude
  * @returns The filtered content with specified callouts removed
  */
-export function filterCallouts(content: string, calloutTypes: string): string {
-    if (!calloutTypes.trim()) {
+export function filterCallouts(
+    content: string,
+    calloutTypes?: string[],
+): string {
+    if (!calloutTypes || calloutTypes.length === 0) {
         return content;
     }
 
-    const types = calloutTypes
-        .split("\n")
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0);
-
-    if (types.length === 0) {
-        return content;
-    }
+    const types = calloutTypes;
 
     const lines = content.split("\n");
     const result: string[] = [];

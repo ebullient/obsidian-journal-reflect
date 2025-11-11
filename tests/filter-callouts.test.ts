@@ -4,13 +4,13 @@ import { filterCallouts } from "../src/journal-Utils";
 describe("filterCallouts", () => {
     it("should return content unchanged when no callout types specified", () => {
         const content = "> [!note] Note\n> Some text";
-        const result = filterCallouts(content, "");
+        const result = filterCallouts(content, []);
         expect(result).toBe(content);
     });
 
     it("should be case insensitive", () => {
         const content = "> [!EXCLUDE] Content\n> Text";
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe("");
     });
 
@@ -21,7 +21,7 @@ describe("filterCallouts", () => {
 > Should be removed
 Keep this too`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`Keep this
 Keep this too`);
     });
@@ -36,7 +36,7 @@ Keep this too`);
 
 Keep this`;
 
-        const result = filterCallouts(content, "exclude\nother");
+        const result = filterCallouts(content, ["exclude", "other"]);
         expect(result).toBe(`Keep
 
 
@@ -51,7 +51,7 @@ Keep this`);
 > Keep this content too
 Normal text`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`> [!note] Keep this callout
 > Keep this content
 > Keep this content too
@@ -66,7 +66,7 @@ Normal text`);
 > Back to parent - still removed
 Keep this`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe("Keep this");
     });
 
@@ -80,7 +80,7 @@ Keep this`;
 > Keep level 1 content
 Normal`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`> [!note] Keep level 1
 > Keep content
 > > [!info] Keep level 2
@@ -99,7 +99,7 @@ Normal`);
 > Keep
 Normal`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`> [!note] Keep
 > Content
 > Keep
@@ -113,7 +113,7 @@ Normal`);
 
 > [!warning] Keep`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`> [!note] Keep
 
 
@@ -128,7 +128,7 @@ Normal`);
 > [!warning] Also removed (no blank line)
 > Also excluded`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`> [!note] Keep this
 > Content`);
     });
@@ -142,7 +142,7 @@ Normal`);
 >> Keep this
 > Keep outer content`;
 
-        const result = filterCallouts(content, "exclude");
+        const result = filterCallouts(content, ["exclude"]);
         expect(result).toBe(`> [!note] Keep outer
 > Content
 

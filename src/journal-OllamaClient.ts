@@ -4,37 +4,20 @@ import type {
     GenerateResponse,
     ListResponse,
 } from "ollama/browser";
-
-export interface IOllamaClient {
-    generate(
-        model: string,
-        systemPrompt: string,
-        documentText: string,
-        options?: GenerateOptions,
-    ): Promise<GenerateResult>;
-    checkConnection(): Promise<boolean>;
-    listModels(): Promise<string[]>;
-}
-
-export interface GenerateOptions {
-    numCtx?: number;
-    context?: number[];
-    temperature?: number;
-    topP?: number;
-    repeatPenalty?: number;
-    keepAlive?: string;
-}
-
-export interface GenerateResult {
-    response: string | null;
-    context?: number[];
-}
+import type {
+    GenerateOptions,
+    GenerateResult,
+    IOllamaClient,
+    Logger,
+} from "./@types";
 
 export class OllamaClient implements IOllamaClient {
     private baseUrl: string;
+    private logger: Logger;
 
-    constructor(baseUrl: string) {
+    constructor(baseUrl: string, logger: Logger) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+        this.logger = logger;
     }
 
     async generate(
@@ -74,7 +57,7 @@ export class OllamaClient implements IOllamaClient {
                 generateRequest.context = options.context;
             }
 
-            console.log("Send request to", this.baseUrl);
+            this.logger.logDebug("Send request to", this.baseUrl);
             const response = await requestUrl({
                 url: `${this.baseUrl}/api/generate`,
                 method: "POST",
@@ -88,9 +71,10 @@ export class OllamaClient implements IOllamaClient {
                 context: data.context,
             };
         } catch (error) {
-            console.error("Error calling Ollama API: ", error);
-            const errorMsg =
-                error instanceof Error ? error.message : String(error);
+            const errorMsg = this.logger.logError(
+                error,
+                "Error calling Ollama API: ",
+            );
             new Notice(`Ollama API error: ${errorMsg}`);
             return { response: null };
         }
@@ -118,13 +102,13 @@ export class OllamaClient implements IOllamaClient {
             const data: ListResponse = response.json;
             return data.models?.map((model) => model.name) || [];
         } catch (error) {
-            console.error("Error fetching models:", error);
+            this.logger.logError(error, "Error fetching models");
             return [];
         }
     }
 
     // Factory method for testing
-    static createForTesting(baseUrl: string): OllamaClient {
-        return new OllamaClient(baseUrl);
+    static createForTesting(baseUrl: string, logger: Logger): OllamaClient {
+        return new OllamaClient(baseUrl, logger);
     }
 }

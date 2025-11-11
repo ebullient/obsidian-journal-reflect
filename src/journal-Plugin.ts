@@ -7,22 +7,28 @@ import {
     Plugin,
     TFile,
 } from "obsidian";
-import type { JournalReflectSettings, ResolvedPrompt } from "./@types/settings";
+import type { JournalReflectSettings, Logger, ResolvedPrompt } from "./@types";
 import { DEFAULT_PROMPT, DEFAULT_SETTINGS } from "./journal-Constants";
 import { OllamaClient } from "./journal-OllamaClient";
 import { JournalReflectSettingsTab } from "./journal-SettingsTab";
 import {
+    compileExcludePatterns,
+    extractFrontmatterValue,
     filterCallouts,
     formatAsBlockquote,
     formatAsEmbedBlockquote,
+    normalizeToArray,
+    parseBoolean,
     parseLinkReference,
+    parseParameterWithConstraint,
+    parsePositiveInteger,
 } from "./journal-Utils";
 import "./window-type";
 
 const CONTEXT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const CONTEXT_REAP_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
 
-export class JournalReflectPlugin extends Plugin {
+export class JournalReflectPlugin extends Plugin implements Logger {
     settings!: JournalReflectSettings;
     ollamaClient!: OllamaClient;
     private commandIds: string[] = [];
@@ -66,7 +72,7 @@ export class JournalReflectPlugin extends Plugin {
     );
 
     private updateOllamaClient(): void {
-        this.ollamaClient = new OllamaClient(this.settings.ollamaUrl);
+        this.ollamaClient = new OllamaClient(this.settings.ollamaUrl, this);
     }
 
     private clearCommands() {
@@ -115,7 +121,7 @@ export class JournalReflectPlugin extends Plugin {
         if (this.ollamaClient) {
             this.updateOllamaClient();
         }
-        this.excludePatterns = this.compileExcludePatterns(
+        this.excludePatterns = compileExcludePatterns(
             this.settings.excludePatterns || this.settings.excludeLinkPatterns,
         );
     }
@@ -127,7 +133,7 @@ export class JournalReflectPlugin extends Plugin {
         }
         await this.saveData(this.settings);
         this.updateOllamaClient();
-        this.excludePatterns = this.compileExcludePatterns(
+        this.excludePatterns = compileExcludePatterns(
             this.settings.excludePatterns,
         );
         this.generateCommands();
@@ -174,7 +180,7 @@ export class JournalReflectPlugin extends Plugin {
 
         const filteredDocContent = filterCallouts(
             expandedDocContent,
-            resolved.excludeCalloutTypes || "",
+            resolved.excludeCalloutTypes,
         );
         const processedContent = this.applyPrefilters(
             filteredDocContent,
@@ -215,31 +221,6 @@ export class JournalReflectPlugin extends Plugin {
         new Notice(`Inserted ${displayLabel}`);
     }
 
-    private compileExcludePatterns(
-        excludePatternsRaw?: string | string[] | undefined,
-    ): RegExp[] {
-        if (!excludePatternsRaw) {
-            return [];
-        }
-        const compiled: RegExp[] = [];
-
-        let excludePatterns = excludePatternsRaw;
-        if (!Array.isArray(excludePatternsRaw)) {
-            excludePatterns = excludePatternsRaw
-                .split("\n")
-                .map((p) => p.trim())
-                .filter((p) => p.length > 0);
-        }
-        for (const pattern of excludePatterns) {
-            try {
-                compiled.push(new RegExp(pattern));
-            } catch (error) {
-                this.logWarn(`Invalid exclude pattern: ${pattern}`, error);
-            }
-        }
-        return compiled;
-    }
-
     private shouldExcludeLink(
         linkCache: {
             link: string;
@@ -255,103 +236,6 @@ export class JournalReflectPlugin extends Plugin {
         ].filter(Boolean);
 
         return allPatterns.some((pattern) => pattern.test(textToCheck));
-    }
-
-    private extractFrontmatterValue(
-        frontmatter: Record<string, unknown> | undefined,
-        key: string,
-        promptKey: string,
-    ): string | undefined {
-        if (!frontmatter?.[key]) {
-            return undefined;
-        }
-
-        const value = frontmatter[key];
-        if (typeof value === "string") {
-            return value;
-        }
-        if (typeof value === "object" && value !== null) {
-            const promptValue = (value as Record<string, unknown>)[promptKey];
-            if (typeof promptValue === "string") {
-                return promptValue;
-            }
-        }
-        return undefined;
-    }
-
-    private getFrontmatterValue(
-        frontmatter: Record<string, unknown> | undefined,
-        keys: string[],
-    ): unknown {
-        if (!frontmatter) {
-            return undefined;
-        }
-        for (const key of keys) {
-            if (frontmatter[key] !== undefined) {
-                return frontmatter[key];
-            }
-        }
-        return undefined;
-    }
-
-    private parseFiniteNumber(value: unknown): number | undefined {
-        if (value === null || value === undefined) {
-            return undefined;
-        }
-
-        const parsed =
-            typeof value === "number"
-                ? value
-                : Number.parseFloat(String(value).trim());
-
-        if (Number.isFinite(parsed)) {
-            return parsed;
-        }
-        return undefined;
-    }
-
-    private parsePositiveInteger(value: unknown): number | undefined {
-        const parsed = this.parseFiniteNumber(value);
-
-        if (parsed === undefined) {
-            return undefined;
-        }
-        if (Number.isInteger(parsed) && parsed > 0) {
-            return parsed;
-        }
-        return undefined;
-    }
-
-    private parseBoolean(value: unknown): boolean | undefined {
-        if (value === null || value === undefined) {
-            return undefined;
-        }
-        if (typeof value === "boolean") {
-            return value;
-        }
-        if (typeof value === "string") {
-            const normalized = value.trim().toLowerCase();
-            if (normalized === "true") {
-                return true;
-            }
-            if (normalized === "false") {
-                return false;
-            }
-        }
-        return undefined;
-    }
-
-    private parseParameterWithConstraint(
-        frontmatter: Record<string, unknown> | undefined,
-        keys: string[],
-        constraint: (val: number) => boolean,
-    ): number | undefined {
-        const candidate = this.parseFiniteNumber(
-            this.getFrontmatterValue(frontmatter, keys),
-        );
-        return candidate !== undefined && constraint(candidate)
-            ? candidate
-            : undefined;
     }
 
     private buildContextKey(
@@ -419,7 +303,7 @@ export class JournalReflectPlugin extends Plugin {
             this.app.metadataCache.getFileCache(file)?.frontmatter;
 
         // Check for direct prompt in frontmatter
-        const promptValue = this.extractFrontmatterValue(
+        const promptValue = extractFrontmatterValue(
             frontmatter,
             "prompt",
             promptKey,
@@ -429,7 +313,7 @@ export class JournalReflectPlugin extends Plugin {
         }
 
         // Check for prompt-file in frontmatter
-        const promptFile = this.extractFrontmatterValue(
+        const promptFile = extractFrontmatterValue(
             frontmatter,
             "prompt-file",
             promptKey,
@@ -482,18 +366,18 @@ export class JournalReflectPlugin extends Plugin {
                     typeof frontmatter?.model === "string"
                         ? frontmatter.model
                         : undefined;
-                const numCtx = this.parsePositiveInteger(frontmatter?.num_ctx);
-                const temperature = this.parseParameterWithConstraint(
+                const numCtx = parsePositiveInteger(frontmatter?.num_ctx);
+                const temperature = parseParameterWithConstraint(
                     frontmatter,
                     ["temperature", "temp"],
                     (val) => val >= 0,
                 );
-                const topP = this.parseParameterWithConstraint(
+                const topP = parseParameterWithConstraint(
                     frontmatter,
                     ["top_p", "topP", "top-p"],
                     (val) => val > 0,
                 );
-                const repeatPenalty = this.parseParameterWithConstraint(
+                const repeatPenalty = parseParameterWithConstraint(
                     frontmatter,
                     ["repeat_penalty", "repeatPenalty", "repeat-penalty"],
                     (val) => val > 0,
@@ -503,17 +387,15 @@ export class JournalReflectPlugin extends Plugin {
                     frontmatter?.is_continuous ??
                     frontmatter?.["is-continuous"] ??
                     frontmatter?.continuous;
-                const isContinuous = this.parseBoolean(rawContinuous);
-                const includeLinks = this.parseBoolean(
-                    frontmatter?.includeLinks,
-                );
-                const excludePatterns = this.compileExcludePatterns(
+                const isContinuous = parseBoolean(rawContinuous);
+                const includeLinks = parseBoolean(frontmatter?.includeLinks);
+                const excludePatterns = compileExcludePatterns(
                     frontmatter?.excludePatterns,
                 );
-                const excludeCalloutTypes = frontmatter?.excludeCalloutTypes;
-                const filters = Array.isArray(frontmatter?.filters)
-                    ? frontmatter.filters
-                    : undefined;
+                const excludeCalloutTypes = normalizeToArray(
+                    frontmatter?.excludeCalloutTypes,
+                );
+                const filters = normalizeToArray(frontmatter?.filters);
 
                 // Strip frontmatter from content
                 const promptText = this.stripFrontmatter(promptContent);
@@ -533,7 +415,7 @@ export class JournalReflectPlugin extends Plugin {
                 };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
-                this.logError("Error reading prompt file", error);
+                this.logError(error, "Error reading prompt file");
             }
         } else {
             new Notice(`Prompt file not found: ${promptFilePath}`);
@@ -725,7 +607,7 @@ export class JournalReflectPlugin extends Plugin {
             try {
                 processedContent = filterFn(processedContent);
             } catch (error) {
-                this.logError(`Error applying filter "${filterName}"`, error);
+                this.logError(error, `Error applying filter "${filterName}"`);
                 // Continue with original content on error
                 return content;
             }
@@ -763,7 +645,11 @@ export class JournalReflectPlugin extends Plugin {
 
         const displayLabel =
             this.settings.prompts[promptKey]?.displayLabel || promptKey;
-        new Notice(`Generating ${displayLabel} using ${model}`);
+
+        const notice = new Notice(
+            `Generating ${displayLabel} using ${model}`,
+            0,
+        );
 
         const contextKey = this.buildContextKey(
             activeNote,
@@ -790,35 +676,56 @@ export class JournalReflectPlugin extends Plugin {
             options: generateOptions,
         });
 
-        const result = await this.ollamaClient.generate(
-            model,
-            resolvedPrompt.prompt,
-            documentText,
-            generateOptions,
-        );
+        try {
+            const result = await this.ollamaClient.generate(
+                model,
+                resolvedPrompt.prompt,
+                documentText,
+                generateOptions,
+            );
 
-        if (contextKey !== null && result.context) {
-            this.storeContextForKey(contextKey, result.context);
+            notice.hide();
+
+            if (contextKey !== null && result.context) {
+                this.storeContextForKey(contextKey, result.context);
+            }
+
+            return result.response;
+        } catch (error) {
+            notice.hide();
+            const errorMsg = this.logError(error);
+            new Notice(`Failed to generate ${displayLabel}: ${errorMsg}`);
+            return null;
         }
-
-        return result.response;
     }
 
     logInfo(message: string, ...params: unknown[]): void {
-        console.info(`[Journal Reflect] ${message}`, ...params);
+        console.info("[Journal Reflect]", message, ...params);
     }
 
     logWarn(message: string, ...params: unknown[]): void {
-        console.warn(`[Journal Reflect] ${message}`, ...params);
+        console.warn("[Journal Reflect]", message, ...params);
     }
 
-    logError(message: string, ...params: unknown[]): void {
-        console.error(`[Journal Reflect] ${message}`, ...params);
+    logError(
+        error: unknown,
+        message: string = "",
+        ...params: unknown[]
+    ): string {
+        if (message) {
+            console.error("[Journal Reflect]", message, error, ...params);
+            return message;
+        } else if (error instanceof Error) {
+            console.error("[Journal Reflect]", error.message, error, ...params);
+            return error.message;
+        }
+        console.error("[Journal Reflect]", error, ...params);
+        return String(error);
     }
 
     logDebug(message: string, ...params: unknown[]): void {
         if (this.settings?.debugLogging) {
-            console.debug(`[Journal Reflect] ${message}`, ...params);
+            console.debug("[Journal Reflect]", message, ...params);
         }
     }
 
