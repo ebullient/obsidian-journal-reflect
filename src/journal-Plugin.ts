@@ -458,8 +458,9 @@ export class JournalReflectPlugin extends Plugin implements Logger {
             return content;
         }
 
-        // Track seen links to prevent duplicates
+        // Track seen files to prevent duplicates (using normalized TFile paths)
         const seenLinks = new Set<string>();
+        seenLinks.add(sourceFile.path);
 
         // Queue of files to process
         const fileQueue: FileToProcess[] = [
@@ -496,12 +497,7 @@ export class JournalReflectPlugin extends Plugin implements Logger {
                 ].filter((link) => link);
 
                 for (const cachedLink of allLinks) {
-                    if (
-                        !this.shouldExcludeLink(cachedLink, pathPatterns) &&
-                        !seenLinks.has(cachedLink.link)
-                    ) {
-                        seenLinks.add(cachedLink.link);
-
+                    if (!this.shouldExcludeLink(cachedLink, pathPatterns)) {
                         // Resolve and queue the target file
                         const { path, subpath: linkSubpath } =
                             parseLinkReference(cachedLink.link);
@@ -511,7 +507,9 @@ export class JournalReflectPlugin extends Plugin implements Logger {
                                 file.path,
                             );
 
-                        if (targetFile) {
+                        if (targetFile && !seenLinks.has(targetFile.path)) {
+                            seenLinks.add(targetFile.path);
+
                             try {
                                 const linkedContent =
                                     await this.app.vault.cachedRead(targetFile);
@@ -604,6 +602,7 @@ export class JournalReflectPlugin extends Plugin implements Logger {
             }
 
             try {
+                this.logDebug("Filtering:", filterName);
                 processedContent = filterFn(processedContent);
             } catch (error) {
                 this.logError(error, `Error applying filter "${filterName}"`);
