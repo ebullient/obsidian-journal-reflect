@@ -222,29 +222,6 @@ export function formatAsBlockquote(
 }
 
 /**
- * Formats embedded content as a nested blockquote callout.
- *
- * @param content - The content to format
- * @param linkTarget - The link target to display in the callout header
- * @param depth - The nesting depth (0 = single >, 1 = >>, etc.)
- * @returns The formatted blockquote string
- */
-export function formatAsEmbedBlockquote(
-    content: string,
-    linkTarget: string,
-    depth: number,
-    calloutType = "embedded-note",
-): string {
-    const prefix = ">".repeat(depth + 1);
-    const lines = content
-        .split("\n")
-        .map((line) => `${prefix} ${line}`)
-        .join("\n");
-    const calloutHeader = `${prefix} [!${calloutType}] ${linkTarget}`;
-    return `${calloutHeader}\n${lines}`;
-}
-
-/**
  * Filters out callouts of specified types from content.
  * Handles nested callouts by tracking depth and parent exclusion state.
  * If a callout is excluded, all nested content (including other callouts)
@@ -276,7 +253,7 @@ export function filterCallouts(
         const depth = (trimmed.match(/^(?:>\s*)*/)?.[0].match(/>/g) || [])
             .length;
         const isBlank = depth === 0 && line.trim().length === 0;
-        const calloutMatch = line.match(/^((?:>\s*)+)\[!(\w+)\]/);
+        const calloutMatch = line.match(/^((?:>\s*)+)\[!([\w-]+)\]/);
 
         // Currently skipping an excluded callout?
         if (skipDepth >= 0) {

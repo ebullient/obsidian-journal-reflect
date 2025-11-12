@@ -150,4 +150,17 @@ Normal`);
 >> Keep this
 > Keep outer content`);
     });
+
+    it("should filter callouts with hyphens in type name", () => {
+        const content = `> [!embedded-note] Keep this
+> Content
+>> [!tier-assessment] Remove this
+>> Should be removed
+> Keep this too`;
+
+        const result = filterCallouts(content, ["tier-assessment"]);
+        expect(result).toBe(`> [!embedded-note] Keep this
+> Content
+> Keep this too`);
+    });
 });

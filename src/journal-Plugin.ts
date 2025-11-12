@@ -7,7 +7,12 @@ import {
     Plugin,
     TFile,
 } from "obsidian";
-import type { JournalReflectSettings, Logger, ResolvedPrompt } from "./@types";
+import type {
+    FileToProcess,
+    JournalReflectSettings,
+    Logger,
+    ResolvedPrompt,
+} from "./@types";
 import { DEFAULT_PROMPT, DEFAULT_SETTINGS } from "./journal-Constants";
 import { OllamaClient } from "./journal-OllamaClient";
 import { JournalReflectSettingsTab } from "./journal-SettingsTab";
@@ -16,7 +21,6 @@ import {
     extractFrontmatterValue,
     filterCallouts,
     formatAsBlockquote,
-    formatAsEmbedBlockquote,
     normalizeToArray,
     parseBoolean,
     parseLinkReference,
@@ -171,6 +175,21 @@ export class JournalReflectPlugin extends Plugin implements Logger {
             activeNote,
             promptKey,
         );
+
+        this.logDebug("Resolved prompt parameters:", {
+            promptKey,
+            includeLinks: resolved.includeLinks,
+            excludeCalloutTypes: resolved.excludeCalloutTypes,
+            excludePatterns: resolved.excludePatterns?.length,
+            filters: resolved.filters,
+            model: resolved.model,
+            numCtx: resolved.numCtx,
+            temperature: resolved.temperature,
+            topP: resolved.topP,
+            repeatPenalty: resolved.repeatPenalty,
+            isContinuous: resolved.isContinuous,
+        });
+
         const expandedDocContent = await this.expandLinkedFiles(
             activeNote,
             docContent,
@@ -434,107 +453,87 @@ export class JournalReflectPlugin extends Plugin implements Logger {
         content: string,
         includeLinks = false,
         pathPatterns: RegExp[] = [],
-        depth = 0,
-        processedFiles = new Set<string>(),
     ): Promise<string> {
         if (!sourceFile) {
             return content;
         }
 
-        // Limit nesting to 2 levels
-        if (depth >= 2) {
-            return content;
-        }
+        // Track seen links to prevent duplicates
+        const seenLinks = new Set<string>();
 
-        // Mark this file as processed to prevent circular references
-        processedFiles.add(sourceFile.path);
+        // Queue of files to process
+        const fileQueue: FileToProcess[] = [
+            {
+                file: sourceFile,
+                linkText: sourceFile.path,
+                fileContent: content,
+            },
+        ];
 
-        let expandedContent = content;
-        const fileCache = this.app.metadataCache.getFileCache(sourceFile);
+        let expandedContent = "";
 
-        if (!fileCache) {
-            return content;
-        }
+        // Process queue breadth-first
+        let fileToProcess = fileQueue.shift();
+        while (fileToProcess) {
+            const { file, linkText, fileContent, subpath } = fileToProcess;
 
-        const processedLinks = new Set<string>();
+            this.logDebug("Processing file", file.path, linkText);
 
-        // Process both links and embeds (fileCache already filters out external URLs)
-        // Only include regular links if includeLinks is true; always include embeds
-        const allLinks = [
-            ...(includeLinks ? fileCache.links || [] : []),
-            ...(fileCache.embeds || []),
-        ].filter((link) => link);
+            // Extract content (apply subpath if needed)
+            const extractedContent = subpath
+                ? this.extractSubpathContent(file, fileContent, subpath)
+                : fileContent;
 
-        for (const cachedLink of allLinks) {
-            // Skip if link matches exclusion patterns (global or prompt-specific)
-            if (this.shouldExcludeLink(cachedLink, pathPatterns)) {
-                this.logDebug("Skipping excluded link", cachedLink.link);
-                continue;
-            }
-            this.logDebug("Expanding link", sourceFile.path, cachedLink.link);
+            // Append to output with sentinels
+            expandedContent += `\n===== BEGIN ENTRY: ${linkText} =====\n${extractedContent}\n===== END ENTRY =====\n\n`;
 
-            // Skip if we've already processed this link target
-            if (processedLinks.has(cachedLink.link)) {
-                this.logDebug("Skipping visited link", cachedLink.link);
-                continue;
-            }
-            processedLinks.add(cachedLink.link);
+            // Discover links from this file
+            const fileCache = this.app.metadataCache.getFileCache(file);
+            if (fileCache) {
+                const allLinks = [
+                    ...(includeLinks ? fileCache.links || [] : []),
+                    ...(fileCache.embeds || []),
+                ].filter((link) => link);
 
-            // Parse link to extract path and subpath (heading/block reference)
-            const { path, subpath } = parseLinkReference(cachedLink.link);
+                for (const cachedLink of allLinks) {
+                    if (
+                        !this.shouldExcludeLink(cachedLink, pathPatterns) &&
+                        !seenLinks.has(cachedLink.link)
+                    ) {
+                        seenLinks.add(cachedLink.link);
 
-            const targetFile = this.app.metadataCache.getFirstLinkpathDest(
-                path,
-                sourceFile.path,
-            );
+                        // Resolve and queue the target file
+                        const { path, subpath: linkSubpath } =
+                            parseLinkReference(cachedLink.link);
+                        const targetFile =
+                            this.app.metadataCache.getFirstLinkpathDest(
+                                path,
+                                file.path,
+                            );
 
-            if (targetFile) {
-                // Skip if we've already processed this file (circular reference)
-                if (processedFiles.has(targetFile.path)) {
-                    this.logDebug(
-                        "Skipping circular reference",
-                        targetFile.path,
-                    );
-                    continue;
-                }
-
-                try {
-                    const linkedContent =
-                        await this.app.vault.cachedRead(targetFile);
-                    const extractedContent = subpath
-                        ? this.extractSubpathContent(
-                              targetFile,
-                              linkedContent,
-                              subpath,
-                          )
-                        : linkedContent;
-
-                    // Recursively expand links in the embedded content
-                    const fullyExpandedContent = await this.expandLinkedFiles(
-                        targetFile,
-                        extractedContent,
-                        includeLinks,
-                        pathPatterns,
-                        depth + 1,
-                        processedFiles,
-                    );
-
-                    // Format as blockquote callout
-                    const linkDisplay = cachedLink.link;
-                    const quotedContent = formatAsEmbedBlockquote(
-                        fullyExpandedContent,
-                        linkDisplay,
-                        depth,
-                    );
-                    expandedContent += `\n\n${quotedContent}`;
-                } catch (error) {
-                    this.logWarn(
-                        "Could not read linked file",
-                        cachedLink.link,
-                        error,
-                    );
+                        if (targetFile) {
+                            try {
+                                const linkedContent =
+                                    await this.app.vault.cachedRead(targetFile);
+                                fileQueue.push({
+                                    file: targetFile,
+                                    linkText: cachedLink.link,
+                                    fileContent: linkedContent,
+                                    subpath: linkSubpath ?? undefined,
+                                });
+                            } catch (error) {
+                                this.logWarn(
+                                    "Could not read linked file",
+                                    cachedLink.link,
+                                    error,
+                                );
+                            }
+                        }
+                    }
                 }
             }
+
+            fileToProcess = fileQueue.shift();
         }
 
         return expandedContent;

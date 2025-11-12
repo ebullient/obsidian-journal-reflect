@@ -1,3 +1,5 @@
+import type { TFile } from "obsidian";
+
 export interface PromptConfig {
     displayLabel: string;
     promptFile?: string;
@@ -60,4 +62,11 @@ export interface Logger {
     logWarn(message: string, ...params: unknown[]): void;
     logError(error: unknown, message: string, ...params: unknown[]): string;
     logDebug(message: string, ...params: unknown[]): void;
+}
+
+export interface FileToProcess {
+    file: TFile;
+    linkText: string;
+    fileContent: string;
+    subpath?: string;
 }
