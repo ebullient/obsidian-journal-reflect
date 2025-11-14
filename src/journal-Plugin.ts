@@ -176,19 +176,7 @@ export class JournalReflectPlugin extends Plugin implements Logger {
             promptKey,
         );
 
-        this.logDebug("Resolved prompt parameters:", {
-            promptKey,
-            includeLinks: resolved.includeLinks,
-            excludeCalloutTypes: resolved.excludeCalloutTypes,
-            excludePatterns: resolved.excludePatterns?.length,
-            filters: resolved.filters,
-            model: resolved.model,
-            numCtx: resolved.numCtx,
-            temperature: resolved.temperature,
-            topP: resolved.topP,
-            repeatPenalty: resolved.repeatPenalty,
-            isContinuous: resolved.isContinuous,
-        });
+        this.logDebug("Resolved prompt parameters:", promptKey, resolved);
 
         const expandedDocContent = await this.expandLinkedFiles(
             activeNote,
@@ -214,7 +202,7 @@ export class JournalReflectPlugin extends Plugin implements Logger {
         );
 
         if (content) {
-            this.insertContent(editor, content, promptKey);
+            this.insertContent(editor, content, promptKey, resolved);
         }
     }
 
@@ -222,10 +210,25 @@ export class JournalReflectPlugin extends Plugin implements Logger {
         editor: Editor,
         content: string,
         promptKey: string,
+        resolved: ResolvedPrompt,
     ): void {
-        const promptConfig = this.settings.prompts[promptKey];
-        const calloutHeading = promptConfig?.calloutHeading;
-        const formattedContent = formatAsBlockquote(content, calloutHeading);
+        const wrapInBlockquote = resolved.wrapInBlockquote ?? true;
+        const calloutHeading = resolved.calloutHeading;
+        const replaceSelectedText = resolved.replaceSelectedText ?? false;
+
+        const formattedContent = wrapInBlockquote
+            ? formatAsBlockquote(content, calloutHeading)
+            : content;
+
+        const displayLabel =
+            this.settings.prompts[promptKey]?.displayLabel || promptKey;
+
+        if (replaceSelectedText && editor.somethingSelected()) {
+            editor.replaceSelection(formattedContent);
+            new Notice(`Replaced selection with ${displayLabel}`);
+            return;
+        }
+
         const cursor = editor.getCursor();
         const currentLine = editor.getLine(cursor.line);
         const isEmptyLine = currentLine.trim() === "";
@@ -235,8 +238,6 @@ export class JournalReflectPlugin extends Plugin implements Logger {
             : `\n\n${formattedContent}\n\n`;
 
         editor.replaceSelection(insertText);
-        const displayLabel =
-            this.settings.prompts[promptKey]?.displayLabel || promptKey;
         new Notice(`Inserted ${displayLabel}`);
     }
 
@@ -396,6 +397,11 @@ export class JournalReflectPlugin extends Plugin implements Logger {
                     ["top_p", "topP", "top-p"],
                     (val) => val > 0,
                 );
+                const topK = parsePositiveInteger(
+                    frontmatter?.top_k ??
+                        frontmatter?.topK ??
+                        frontmatter?.["top-k"],
+                );
                 const repeatPenalty = parseParameterWithConstraint(
                     frontmatter,
                     ["repeat_penalty", "repeatPenalty", "repeat-penalty"],
@@ -415,6 +421,16 @@ export class JournalReflectPlugin extends Plugin implements Logger {
                     frontmatter?.excludeCalloutTypes,
                 );
                 const filters = normalizeToArray(frontmatter?.filters);
+                const wrapInBlockquote = parseBoolean(
+                    frontmatter?.wrapInBlockquote,
+                );
+                const calloutHeading =
+                    typeof frontmatter?.calloutHeading === "string"
+                        ? frontmatter.calloutHeading
+                        : undefined;
+                const replaceSelectedText = parseBoolean(
+                    frontmatter?.replaceSelectedText,
+                );
 
                 // Strip frontmatter from content
                 const promptText = this.stripFrontmatter(promptContent);
@@ -429,8 +445,12 @@ export class JournalReflectPlugin extends Plugin implements Logger {
                     sourcePath: promptFilePath,
                     temperature,
                     topP,
+                    topK,
                     repeatPenalty,
                     filters,
+                    wrapInBlockquote,
+                    calloutHeading,
+                    replaceSelectedText,
                 };
             } catch (error) {
                 new Notice(`Could not read prompt file: ${promptFilePath}`);
@@ -661,6 +681,7 @@ export class JournalReflectPlugin extends Plugin implements Logger {
             context,
             temperature: resolvedPrompt.temperature,
             topP: resolvedPrompt.topP,
+            topK: resolvedPrompt.topK,
             repeatPenalty: resolvedPrompt.repeatPenalty,
             keepAlive: this.settings.keepAlive,
         };

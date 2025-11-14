@@ -3,7 +3,6 @@ import type { TFile } from "obsidian";
 export interface PromptConfig {
     displayLabel: string;
     promptFile?: string;
-    calloutHeading?: string;
 }
 
 export interface ResolvedPrompt {
@@ -17,8 +16,12 @@ export interface ResolvedPrompt {
     sourcePath?: string;
     temperature?: number;
     topP?: number;
+    topK?: number;
     repeatPenalty?: number;
     filters?: string[];
+    wrapInBlockquote?: boolean;
+    calloutHeading?: string;
+    replaceSelectedText?: boolean;
 }
 
 export interface JournalReflectSettings {
@@ -48,6 +51,7 @@ export interface GenerateOptions {
     context?: number[];
     temperature?: number;
     topP?: number;
+    topK?: number;
     repeatPenalty?: number;
     keepAlive?: string;
 }

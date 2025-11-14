@@ -46,6 +46,9 @@ export class OllamaClient implements IOllamaClient {
             if (options?.topP !== undefined) {
                 requestOptions.top_p = options.topP;
             }
+            if (options?.topK !== undefined) {
+                requestOptions.top_k = options.topK;
+            }
             if (options?.repeatPenalty !== undefined) {
                 requestOptions.repeat_penalty = options.repeatPenalty;
             }

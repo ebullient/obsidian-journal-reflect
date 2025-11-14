@@ -273,22 +273,6 @@ export class JournalReflectSettingsTab extends PluginSettingTab {
                         }),
                 );
 
-            new Setting(promptSection)
-                .setName("Callout Heading")
-                .setDesc(
-                    "Optional callout heading (e.g., '[!magic] Affirmation'). If set, this will be prepended to blockquotes.",
-                )
-                .addText((text) =>
-                    text
-                        .setPlaceholder("[!magic] Affirmation")
-                        .setValue(promptConfig.calloutHeading || "")
-                        .onChange((value) => {
-                            const trimmed = value?.trim();
-                            this.newSettings.prompts[promptKey].calloutHeading =
-                                trimmed || undefined;
-                        }),
-                );
-
             if (promptKey !== "reflection") {
                 new Setting(promptSection)
                     .setName("Remove Prompt")
