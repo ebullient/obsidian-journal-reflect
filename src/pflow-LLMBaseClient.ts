@@ -143,26 +143,6 @@ export abstract class LLMBaseClient implements IOllamaClient {
         }
     }
 
-    /**
-     * Encode conversation history as number array for storage
-     */
-    protected encodeContext(context: unknown): number[] {
-        const contextJson = JSON.stringify(context);
-        return Array.from(contextJson).map((char) => char.charCodeAt(0));
-    }
-
-    /**
-     * Decode conversation history from number array
-     */
-    protected decodeContext<T>(context: number[]): T | null {
-        try {
-            return JSON.parse(String.fromCharCode(...context)) as T;
-        } catch (error) {
-            this.logger.logDebug("Failed to parse context:", error);
-            return null;
-        }
-    }
-
     // Abstract methods that must be implemented by subclasses
     abstract generate(
         model: string,

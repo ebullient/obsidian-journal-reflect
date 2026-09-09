@@ -462,7 +462,7 @@ export class ContentGenerator {
         for (const link of seenLinks.values()) {
             // Skip null file entries (unresolved links)
             // and non-markdown files
-            if (!link.file || link.file.extension !== "md") {
+            if (link.file?.extension !== "md") {
                 continue;
             }
 

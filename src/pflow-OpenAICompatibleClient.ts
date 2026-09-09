@@ -1,16 +1,12 @@
 import type { RequestUrlParam } from "obsidian";
 import type {
+    ChatMessage,
     ConnectionConfig,
     GenerateOptions,
     GenerateResult,
     Logger,
 } from "./@types";
 import { LLMBaseClient } from "./pflow-LLMBaseClient";
-
-interface ChatMessage {
-    role: "system" | "user" | "assistant";
-    content: string;
-}
 
 interface ChatCompletionRequest {
     model: string;
@@ -72,6 +68,12 @@ export class OpenAICompatibleClient extends LLMBaseClient {
         return this.handleGenerateRequest(async () => {
             const messages: ChatMessage[] = [];
 
+            // Ignore a context left over from another provider: a prompt can
+            // be repointed at a different connection mid-conversation.
+            const context = options?.context;
+            const history: ChatMessage[] =
+                context?.kind === "messages" ? context.messages : [];
+
             if (systemPrompt.trim()) {
                 messages.push({
                     role: "system",
@@ -79,15 +81,7 @@ export class OpenAICompatibleClient extends LLMBaseClient {
                 });
             }
 
-            // Restore conversation history from context if available
-            if (options?.context && options.context.length > 0) {
-                const historyMessages = this.decodeContext<ChatMessage[]>(
-                    options.context,
-                );
-                if (historyMessages) {
-                    messages.push(...historyMessages);
-                }
-            }
+            messages.push(...history);
 
             if (documentText.trim()) {
                 messages.push({
@@ -182,17 +176,8 @@ export class OpenAICompatibleClient extends LLMBaseClient {
             }
 
             // Build conversation history for continuous mode
-            const conversationHistory: ChatMessage[] = [];
-
-            // Add previous history (excluding system message)
-            if (options?.context && options.context.length > 0) {
-                const historyMessages = this.decodeContext<ChatMessage[]>(
-                    options.context,
-                );
-                if (historyMessages) {
-                    conversationHistory.push(...historyMessages);
-                }
-            }
+            // (previous history excludes the system message)
+            const conversationHistory: ChatMessage[] = [...history];
 
             // Add current exchange
             if (documentText.trim()) {
@@ -211,7 +196,7 @@ export class OpenAICompatibleClient extends LLMBaseClient {
 
             return {
                 response: result.trim() || null,
-                context: this.encodeContext(conversationHistory),
+                context: { kind: "messages", messages: conversationHistory },
             };
         }, "OpenAI-compatible");
     }

@@ -46,8 +46,11 @@ export class OllamaClient extends LLMBaseClient {
                 generateRequest.options = requestOptions;
             }
 
-            if (options?.context && options.context.length > 0) {
-                generateRequest.context = options.context;
+            // Ignore a context left over from another provider: a prompt can
+            // be repointed at a different connection mid-conversation.
+            const context = options?.context;
+            if (context?.kind === "ollama" && context.tokens.length > 0) {
+                generateRequest.context = context.tokens;
             }
 
             this.logger.logLlmRequest(generateRequest, "http");
@@ -74,7 +77,9 @@ export class OllamaClient extends LLMBaseClient {
 
             return {
                 response: response.json.response?.trim() || null,
-                context: response.json.context,
+                context: response.json.context
+                    ? { kind: "ollama", tokens: response.json.context }
+                    : undefined,
             };
         }, "Ollama");
     }

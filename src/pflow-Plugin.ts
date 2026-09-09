@@ -8,6 +8,7 @@ import {
 } from "obsidian";
 import type {
     ConnectionConfig,
+    ConversationContext,
     IOllamaClient,
     LlmLogKind,
     Logger,
@@ -31,7 +32,7 @@ export class PromptFlowPlugin extends Plugin implements Logger {
     private excludePatterns: RegExp[] = [];
     private promptContexts = new Map<
         string,
-        { context: number[]; timestamp: number }
+        { context: ConversationContext; timestamp: number }
     >();
 
     promptFlow() {
@@ -255,7 +256,7 @@ export class PromptFlowPlugin extends Plugin implements Logger {
         return `${file.path}::${promptSource}`;
     }
 
-    getContextForKey(key: string | null): number[] | undefined {
+    getContextForKey(key: string | null): ConversationContext | undefined {
         if (!key) {
             return undefined;
         }
@@ -270,8 +271,12 @@ export class PromptFlowPlugin extends Plugin implements Logger {
         return entry.context;
     }
 
-    storeContextForKey(key: string, context: number[]): void {
-        if (context.length === 0) {
+    storeContextForKey(key: string, context: ConversationContext): void {
+        const isEmpty =
+            context.kind === "ollama"
+                ? context.tokens.length === 0
+                : context.messages.length === 0;
+        if (isEmpty) {
             this.promptContexts.delete(key);
             return;
         }

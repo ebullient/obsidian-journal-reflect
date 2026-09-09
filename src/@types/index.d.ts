@@ -72,10 +72,19 @@ export interface IOllamaClient {
     listModels(): Promise<string[]>;
 }
 
+export interface ChatMessage {
+    role: "system" | "user" | "assistant";
+    content: string;
+}
+
+export type ConversationContext =
+    | { kind: "ollama"; tokens: number[] }
+    | { kind: "messages"; messages: ChatMessage[] };
+
 export interface GenerateOptions {
     numCtx?: number;
     maxTokens?: number;
-    context?: number[];
+    context?: ConversationContext;
     temperature?: number;
     topP?: number;
     topK?: number;
@@ -85,7 +94,7 @@ export interface GenerateOptions {
 
 export interface GenerateResult {
     response: string | null;
-    context?: number[];
+    context?: ConversationContext;
 }
 
 export type LlmLogKind = "request" | "http" | "response";
